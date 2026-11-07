@@ -1,0 +1,16 @@
+# Java compiled output
+*.class
+
+# Local chat data and server logs
+/users.txt
+/history.log
+/server.log*
+
+# Build output
+/bin/
+/out/
+/target/
+
+# Operating system files
+.DS_Store
+Thumbs.db
