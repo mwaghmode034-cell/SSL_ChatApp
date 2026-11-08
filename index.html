@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat</title>
+<style>
+:root{--paper:#edf1f4;--card:#fff;--ink:#15232b;--muted:#5e7480;--side:#16343f;--side-ink:#cfe2e8;--line:#d5dee4;--me:#1f5f7a;--priv:#6a4fd6;--grp:#0b8a7e;--err:#b3372b}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:15px/1.45 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif;color:var(--ink);background:var(--paper)}
+button,input,select{font:inherit}
+:focus-visible{outline:2px solid var(--priv);outline-offset:2px}
+#login{min-height:100%;display:grid;place-items:center;background:var(--side);padding:20px}
+.card{background:var(--card);border-radius:14px;padding:28px;width:min(400px,100%)}
+.card h1{font-size:26px;line-height:1.15;margin:0 0 8px}
+.card p{margin:0 0 14px;color:var(--muted)}
+label{display:block;font-weight:600;margin:12px 0 4px}
+input,select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+button{padding:9px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);cursor:pointer}
+button.primary{background:var(--me);border-color:var(--me);color:#fff}
+.row{display:flex;gap:8px;margin-top:16px}
+.row button{flex:1}
+#err{color:var(--err);min-height:1.4em;margin-top:10px}
+#app{display:none;height:100dvh;grid-template-columns:250px 1fr}
+aside{background:var(--side);color:var(--side-ink);padding:14px;overflow:auto;display:flex;flex-direction:column;gap:14px}
+aside h2{font-size:14px;margin:0 0 6px;color:#fff}
+#who{font-size:13px}
+.list{display:flex;flex-direction:column;gap:2px}
+.list button{background:transparent;border:0;color:inherit;text-align:left;padding:6px 8px;border-radius:6px}
+.list button:hover{background:rgba(255,255,255,.14)}
+.list .empty{opacity:.65;padding:6px 8px;font-size:13px}
+.tools{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.tools button,#out{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.25);color:#fff;padding:6px}
+#out{margin-top:auto}
+main{display:flex;flex-direction:column;min-width:0;min-height:0}
+#msgs{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:min(620px,85%);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;align-self:flex-start;overflow-wrap:anywhere}
+.meta{font-size:12px;color:var(--muted);margin-bottom:2px}
+.meta b{color:var(--ink);margin-right:8px}
+.meta span{margin-right:8px}
+.msg.private{background:#f1eeff;border-left:4px solid var(--priv)}
+.msg.group{background:#e8f6f4;border-left:4px solid var(--grp)}
+.msg.own{align-self:flex-end;background:var(--me);border-color:var(--me);color:#fff}
+.msg.own .meta,.msg.own .meta b{color:#d3e6ee}
+.note{align-self:center;font-size:13px;color:var(--muted);white-space:pre-wrap;text-align:center}
+.note.bad{color:var(--err)}
+#compose{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line);background:var(--card)}
+#compose select{width:200px;flex:none}
+@media(max-width:720px){#app{grid-template-columns:1fr;grid-template-rows:auto 1fr}aside{max-height:38vh}#compose select{width:120px}}
+</style>
+</head>
+<body>
+<div id="login">
+  <form class="card" id="lf">
+    <h1>Talk to everyone, one person, or a group.</h1>
+    <p>Log in, or create an account on the chat server.</p>
+    <label for="u">Username</label>
+    <input id="u" autocomplete="username" required>
+    <label for="p">Password</label>
+    <input id="p" type="password" autocomplete="current-password" required>
+    <div id="err" role="alert"></div>
+    <div class="row"><button class="primary">Log in</button><button type="button" id="reg">Create account</button></div>
+  </form>
+</div>
+ 
+<div id="app">
+  <aside>
+    <div id="who"></div>
+    <section><h2>People online</h2><div class="list" id="users"></div></section>
+    <section><h2>Groups</h2><div class="list" id="groups"></div></section>
+    <div class="tools">
+      <button id="ng">New group</button><button id="jg">Join</button>
+      <button id="lg">Leave</button><button id="hs">History</button>
+    </div>
+    <button id="out">Log out</button>
+  </aside>
+  <main>
+    <div id="msgs" aria-live="polite"></div>
+    <form id="compose">
+      <select id="to" aria-label="Send to"></select>
+      <input id="in" placeholder="Write a message" autocomplete="off">
+      <button class="primary">Send</button>
+    </form>
+  </main>
+</div>
+ 
+<script>
+const $ = s => document.querySelector(s);
+let sid, me, es, ended = false, users = [], groups = [];
+ 
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+ 
+// ---------- login ----------
+$('#lf').onsubmit = e => { e.preventDefault(); login('login'); };
+$('#reg').onclick = () => login('register');
+ 
+async function login(mode) {
+  $('#err').textContent = '';
+  const user = $('#u').value.trim();
+  try {
+    const r = await fetch('/api/login', { method: 'POST', body: new URLSearchParams({ mode, user, pass: $('#p').value }) });
+    const t = await r.text();
+    if (!r.ok) { $('#err').textContent = t; return; }
+    sid = t; me = user;
+  } catch (e) {
+    $('#err').textContent = 'Cannot reach WebBridge. Check that it is running.';
+    return;
+  }
+  $('#login').style.display = 'none';
+  $('#app').style.display = 'grid';
+  $('#who').textContent = 'Signed in as ' + me;
+  es = new EventSource('/api/events?sid=' + sid);
+  es.onmessage = e => onLine(e.data);
+  es.addEventListener('closed', end);
+  es.onerror = end;
+  refresh();
+  setInterval(refresh, 10000);
+  $('#in').focus();
+}
+ 
+function end() {
+  if (ended) return;
+  ended = true;
+  es.close();
+  note('Disconnected from the server. Reload the page to log in again.', true);
+  $('#in').disabled = true;
+}
+ 
+// ---------- server lines ----------
+function onLine(line) {
+  if (line.startsWith('Online: ')) { users = list(line.slice(8)); draw('users', users, 'u:'); buildTo(); return; }
+  if (line.startsWith('Groups: ')) { groups = list(line.slice(8)); draw('groups', groups, 'g:'); buildTo(); return; }
+  if (line.startsWith('* ')) refresh();                 // someone joined or left
+  let m;
+  if (m = line.match(/^\[([^\]]+)\] \(private\) (\S+) -> (\S+): (.*)$/))
+    bubble('private', m[2], m[1], m[4], m[2] === me ? 'private to ' + m[3] : 'private');
+  else if (m = line.match(/^\[([^\]]+)\] \[([^\]]+)\] (\S+): (.*)$/))
+    bubble('group', m[3], m[1], m[4], 'in ' + m[2]);
+  else if (m = line.match(/^\[([^\]]+)\] (\S+): (.*)$/))
+    bubble('all', m[2], m[1], m[3], '');
+  else note(line, /^(ERR|No such|Usage|Unknown|Invalid|Join the group|Group already|You are not)/.test(line));
+}
+ 
+const list = csv => csv === '(none)' ? [] : csv.split(/,\s*/).filter(Boolean);
+ 
+function bubble(kind, from, ts, text, tag) {
+  const d = el('div', 'msg ' + kind + (from === me ? ' own' : ''));
+  const meta = el('div', 'meta');
+  meta.title = ts;
+  meta.append(el('b', '', from === me ? 'You' : from), el('span', '', ts.slice(11, 16)));
+  if (tag) meta.append(el('span', '', tag));
+  d.append(meta, el('div', '', text));
+  push(d);
+}
+ 
+function note(text, bad) { push(el('div', 'note' + (bad ? ' bad' : ''), text)); }
+ 
+function push(n) {
+  const b = $('#msgs');
+  const near = b.scrollHeight - b.scrollTop - b.clientHeight < 80;
+  b.append(n);
+  if (near) b.scrollTop = b.scrollHeight;
+}
+ 
+// ---------- sidebar and target ----------
+function draw(id, arr, prefix) {
+  const box = $('#' + id);
+  box.innerHTML = '';
+  if (!arr.length) box.append(el('div', 'empty', id === 'groups' ? 'No groups yet' : 'Nobody yet'));
+  arr.forEach(name => {
+    const b = el('button', '', name === me ? name + ' (you)' : name);
+    b.type = 'button';
+    if (name !== me) b.onclick = () => { $('#to').value = prefix + name; $('#in').focus(); };
+    box.append(b);
+  });
+}
+ 
+function buildTo() {
+  const sel = $('#to'), cur = sel.value || 'all';
+  sel.innerHTML = '';
+  const opt = (v, t) => { const o = el('option', '', t); o.value = v; sel.append(o); };
+  opt('all', 'Everyone');
+  users.filter(u => u !== me).forEach(u => opt('u:' + u, 'Private: ' + u));
+  groups.forEach(g => opt('g:' + g, 'Group: ' + g));
+  sel.value = [...sel.options].some(o => o.value === cur) ? cur : 'all';
+}
+ 
+// ---------- sending ----------
+function post(line) {
+  if (!ended) fetch('/api/send?sid=' + sid, { method: 'POST', body: line }).catch(end);
+}
+function refresh() { post('/users'); post('/group list'); }
+ 
+$('#compose').onsubmit = e => {
+  e.preventDefault();
+  const t = $('#in').value.trim(), v = $('#to').value;
+  if (!t) return;
+  let line = t;
+  if (!t.startsWith('/')) {
+    if (v.startsWith('u:')) line = '/msg ' + v.slice(2) + ' ' + t;
+    else if (v.startsWith('g:')) line = '/g ' + v.slice(2) + ' ' + t;
+  }
+  post(line);
+  $('#in').value = '';
+};
+ 
+const grp = q => { const v = $('#to').value; return v.startsWith('g:') ? v.slice(2) : (prompt(q) || '').trim(); };
+$('#ng').onclick = () => { const n = (prompt('Name for the new group') || '').trim(); if (n) { post('/group create ' + n); refresh(); } };
+$('#jg').onclick = () => { const g = grp('Group to join'); if (g) { post('/group join ' + g); refresh(); } };
+$('#lg').onclick = () => { const g = grp('Group to leave'); if (g) { post('/group leave ' + g); refresh(); } };
+$('#hs').onclick = () => { $('#msgs').innerHTML = ''; post('/history 50'); };
+$('#out').onclick = async () => {
+  if (!ended) await fetch('/api/logout?sid=' + sid, { method: 'POST' }).catch(() => {});
+  location.reload();
+};
+</script>
+</body>
+</html>
