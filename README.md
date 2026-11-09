@@ -11,7 +11,7 @@ Requires Java 8+.
 - Persist user records and chat history across server restarts.
 
 ## Build & run
-    javac *.java
+    javac ChatServer.java ChatClient.java ChatGUI.java
     java ChatServer          # terminal 1 (port 5000)
     java ChatClient          # terminal 2, 3, ... (optionally: java ChatClient <host> <port>)
 
@@ -24,12 +24,14 @@ Requires Java 8+.
     /users   /history [n]   /help   /quit
 
 ## Files created at runtime
-    users.txt    registered users (SHA-256 password hashes)
+    users.txt    registered users (salted PBKDF2-HMAC-SHA256 password hashes)
     history.log  all messages (reloaded on restart)
     server.log   server event log
+
+Older accounts with SHA-256 password hashes are upgraded to PBKDF2 the next time
+the user logs in successfully.
 
 ## Git
 The included `.gitignore` excludes compiled Java classes, build output, and local
 user, chat-history, and server-log files. Keep those runtime files out of commits;
 `users.txt` contains password hashes and `history.log` may contain private messages.
-

@@ -3,11 +3,14 @@ import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.logging.*;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
 
 /** Multi-client chat server. Run: java ChatServer [port] */
 public class ChatServer {
@@ -15,6 +18,10 @@ public class ChatServer {
     static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     static final Path USERS_FILE = Paths.get("users.txt");
     static final Path HISTORY_FILE = Paths.get("history.log");
+    private static final int PASSWORD_ITERATIONS = 210_000;
+    private static final int PASSWORD_SALT_BYTES = 16;
+    private static final int PASSWORD_HASH_BYTES = 32;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     // Shared state (thread-safe collections)
     private final Map<String, String> users = new ConcurrentHashMap<>();          // name -> password hash
@@ -110,13 +117,61 @@ public class ChatServer {
         } catch (IOException e) { LOG.warning("Could not save history: " + e.getMessage()); }
     }
 
-    static String hash(String pw) {
+    static String hashPassword(String password) {
+        byte[] salt = new byte[PASSWORD_SALT_BYTES];
+        SECURE_RANDOM.nextBytes(salt);
+        byte[] hash = derivePasswordHash(password.toCharArray(), salt, PASSWORD_ITERATIONS);
+        return "pbkdf2$" + PASSWORD_ITERATIONS + "$"
+                + Base64.getEncoder().encodeToString(salt) + "$"
+                + Base64.getEncoder().encodeToString(hash);
+    }
+
+    static boolean verifyPassword(String password, String stored) {
+        if (stored.startsWith("pbkdf2$")) {
+            String[] parts = stored.split("\\$", -1);
+            if (parts.length != 4) return false;
+            try {
+                int iterations = Integer.parseInt(parts[1]);
+                if (iterations < 100_000 || iterations > 1_000_000) return false;
+                byte[] salt = Base64.getDecoder().decode(parts[2]);
+                byte[] expected = Base64.getDecoder().decode(parts[3]);
+                if (salt.length != PASSWORD_SALT_BYTES || expected.length != PASSWORD_HASH_BYTES) return false;
+                byte[] actual = derivePasswordHash(password.toCharArray(), salt, iterations);
+                return MessageDigest.isEqual(expected, actual);
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
+        }
+
+        if (!stored.matches("[0-9a-fA-F]{64}")) return false;
         try {
-            byte[] d = MessageDigest.getInstance("SHA-256").digest(pw.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : d) sb.append(String.format("%02x", b));
-            return sb.toString();
-        } catch (Exception e) { throw new RuntimeException(e); }
+            byte[] actual = MessageDigest.getInstance("SHA-256")
+                    .digest(password.getBytes(StandardCharsets.UTF_8));
+            byte[] expected = new byte[actual.length];
+            for (int i = 0; i < expected.length; i++) {
+                expected[i] = (byte) Integer.parseInt(stored.substring(i * 2, i * 2 + 2), 16);
+            }
+            return MessageDigest.isEqual(expected, actual);
+        } catch (java.security.GeneralSecurityException e) {
+            throw new IllegalStateException("Password verification is unavailable", e);
+        }
+    }
+
+    static boolean isLegacyPasswordHash(String stored) {
+        return stored.matches("[0-9a-fA-F]{64}");
+    }
+
+    private static byte[] derivePasswordHash(char[] password, byte[] salt, int iterations) {
+        PBEKeySpec spec = new PBEKeySpec(password, salt, iterations, PASSWORD_HASH_BYTES * 8);
+        try {
+            return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+                    .generateSecret(spec).getEncoded();
+        } catch (java.security.GeneralSecurityException e) {
+            throw new IllegalStateException("PBKDF2 password hashing is unavailable", e);
+        } finally {
+            spec.clearPassword();
+            Arrays.fill(password, '\0');
+        }
     }
 
     static String now() { return LocalDateTime.now().format(TS); }
@@ -160,19 +215,25 @@ public class ChatServer {
                 String[] p = line.trim().split("\\s+");
                 if (p.length != 3) { send("ERR Usage: LOGIN|REGISTER <user> <pass>"); continue; }
                 String cmd = p[0].toUpperCase(), name = p[1], pw = p[2];
+                boolean justRegistered = false;
                 if (cmd.equals("REGISTER")) {
                     if (!name.matches("[A-Za-z0-9_]{3,16}")) { send("ERR Username must be 3-16 letters/digits/_"); continue; }
-                    if (users.putIfAbsent(name, hash(pw)) != null) { send("ERR Username already taken"); continue; }
+                    if (users.putIfAbsent(name, hashPassword(pw)) != null) { send("ERR Username already taken"); continue; }
                     saveUser(name, users.get(name));
                     LOG.info("Registered new user: " + name);
+                    justRegistered = true;
                     cmd = "LOGIN";
                 }
                 if (cmd.equals("LOGIN")) {
                     String h = users.get(name);
-                    if (h == null || !h.equals(hash(pw))) {
+                    if (h == null || (!justRegistered && !verifyPassword(pw, h))) {
                         LOG.warning("Failed login for '" + name + "'");
                         send("ERR Invalid username or password");
                         continue;
+                    }
+                    if (isLegacyPasswordHash(h)) {
+                        String upgraded = hashPassword(pw);
+                        if (users.replace(name, h, upgraded)) saveUser(name, upgraded);
                     }
                     if (online.putIfAbsent(name, this) != null) { send("ERR Already logged in elsewhere"); continue; }
                     username = name;
