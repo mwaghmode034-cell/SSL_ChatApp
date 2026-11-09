@@ -18,6 +18,7 @@ public class ChatServer {
     static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     static final Path USERS_FILE = Paths.get("users.txt");
     static final Path HISTORY_FILE = Paths.get("history.log");
+    static final Path GROUPS_FILE = Paths.get("groups.txt");
     private static final int PASSWORD_ITERATIONS = 210_000;
     private static final int PASSWORD_SALT_BYTES = 16;
     private static final int PASSWORD_HASH_BYTES = 32;
@@ -68,6 +69,7 @@ public class ChatServer {
 
     void start(int port) throws IOException {
         loadUsers();
+        loadGroups();
         loadHistory();
         try (ServerSocket ss = new ServerSocket(port)) {
             LOG.info("Server started on port " + port);
@@ -96,6 +98,56 @@ public class ChatServer {
             Files.write(USERS_FILE, (name + ":" + hash + "\n").getBytes(StandardCharsets.UTF_8),
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException e) { LOG.warning("Could not save user: " + e.getMessage()); }
+    }
+
+    void loadGroups() {
+        try {
+            if (!Files.exists(GROUPS_FILE)) return;
+            for (String line : Files.readAllLines(GROUPS_FILE, StandardCharsets.UTF_8)) {
+                String[] parts = line.split(":", 2);
+                if (parts.length != 2 || !parts[0].matches("[A-Za-z0-9_]{1,20}")) {
+                    LOG.warning("Skipping malformed group record");
+                    continue;
+                }
+                Set<String> members = groups.computeIfAbsent(parts[0], k -> ConcurrentHashMap.newKeySet());
+                if (!parts[1].isEmpty()) {
+                    if (parts[1].matches("[A-Za-z0-9_]{3,16}") && users.containsKey(parts[1])) {
+                        members.add(parts[1]);
+                    } else {
+                        LOG.warning("Skipping invalid or unknown member in group " + parts[0]);
+                    }
+                }
+            }
+            LOG.info("Loaded " + groups.size() + " groups");
+        } catch (IOException e) {
+            LOG.warning("Could not load groups: " + e.getMessage());
+        }
+    }
+
+    synchronized void saveGroups() throws IOException {
+        List<String> lines = new ArrayList<>();
+        for (String group : new TreeSet<>(groups.keySet())) {
+            Set<String> members = groups.get(group);
+            if (members == null || members.isEmpty()) {
+                lines.add(group + ":");
+            } else {
+                for (String member : new TreeSet<>(members)) lines.add(group + ":" + member);
+            }
+        }
+
+        Path tempFile = GROUPS_FILE.resolveSibling(GROUPS_FILE.getFileName() + ".tmp");
+        try {
+            Files.write(tempFile, lines, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            try {
+                Files.move(tempFile, GROUPS_FILE, StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tempFile, GROUPS_FILE, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(tempFile);
+        }
     }
 
     void loadHistory() {
@@ -279,20 +331,47 @@ public class ChatServer {
             switch (sub) {
                 case "create":
                     if (!g.matches("[A-Za-z0-9_]{1,20}")) { send("Invalid group name"); return; }
-                    if (groups.putIfAbsent(g, ConcurrentHashMap.newKeySet()) != null) { send("Group already exists"); return; }
-                    groups.get(g).add(username);
+                    Set<String> newMembers = ConcurrentHashMap.newKeySet();
+                    newMembers.add(username);
+                    if (groups.putIfAbsent(g, newMembers) != null) { send("Group already exists"); return; }
+                    try {
+                        saveGroups();
+                    } catch (IOException e) {
+                        groups.remove(g, newMembers);
+                        LOG.warning("Could not save groups: " + e.getMessage());
+                        send("ERR Could not save the group. Check server storage permissions.");
+                        return;
+                    }
                     LOG.info(username + " created group " + g);
                     send("Group '" + g + "' created and joined."); break;
                 case "join": {
                     Set<String> m = groups.get(g);
                     if (m == null) { send("No such group"); return; }
-                    m.add(username);
+                    boolean added = m.add(username);
+                    if (added) {
+                        try {
+                            saveGroups();
+                        } catch (IOException e) {
+                            m.remove(username);
+                            LOG.warning("Could not save groups: " + e.getMessage());
+                            send("ERR Could not save group membership. Check server storage permissions.");
+                            return;
+                        }
+                    }
                     LOG.info(username + " joined group " + g);
                     sendToGroup(g, "* " + username + " joined group " + g); break;
                 }
                 case "leave": {
                     Set<String> m = groups.get(g);
                     if (m == null || !m.remove(username)) { send("You are not in that group"); return; }
+                    try {
+                        saveGroups();
+                    } catch (IOException e) {
+                        m.add(username);
+                        LOG.warning("Could not save groups: " + e.getMessage());
+                        send("ERR Could not save group membership. Check server storage permissions.");
+                        return;
+                    }
                     LOG.info(username + " left group " + g);
                     send("You left '" + g + "'.");
                     sendToGroup(g, "* " + username + " left group " + g); break;

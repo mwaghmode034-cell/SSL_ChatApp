@@ -4,6 +4,7 @@
 # Local chat data and server logs
 /users.txt
 /history.log
+/groups.txt
 /server.log*
 
 # Build output

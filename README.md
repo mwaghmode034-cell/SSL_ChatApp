@@ -8,12 +8,14 @@ Requires Java 8+.
 - Send private messages, including to offline users (they can view them in history).
 - Create and manage chat groups, and send messages to group members.
 - View online users, list groups, and retrieve recent message history.
-- Persist user records and chat history across server restarts.
+- Persist user records, chat history, groups, and group memberships across server restarts.
 
 ## Build & run
     javac ChatServer.java ChatClient.java ChatGUI.java
     java ChatServer          # terminal 1 (port 5000)
-    java ChatClient          # terminal 2, 3, ... (optionally: java ChatClient <host> <port>)
+    java ChatClient          # terminal 2, 3, ... (optionally: java ChatClient <host> 
+    java ChatGUI             #ANY TERMINAL THIS COMMAND WILL OPEN THE GUI 
+    <port>)
 
 ## Commands (in the client)
     <text>                         message everyone
@@ -26,6 +28,7 @@ Requires Java 8+.
 ## Files created at runtime
     users.txt    registered users (salted PBKDF2-HMAC-SHA256 password hashes)
     history.log  all messages (reloaded on restart)
+    groups.txt   groups and memberships (reloaded on restart)
     server.log   server event log
 
 Older accounts with SHA-256 password hashes are upgraded to PBKDF2 the next time

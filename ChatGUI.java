@@ -28,6 +28,7 @@ public class ChatGUI extends JFrame {
     private final JList<String> groupList = new JList<>(groupModel);
     private final JTextField input = new JTextField();
     private final JButton sendBtn = new JButton("Send");
+    private final JLabel statusLabel = new JLabel("Not connected");
     private javax.swing.Timer refreshTimer;
 
     public static void main(String[] args) {
@@ -46,11 +47,14 @@ public class ChatGUI extends JFrame {
         JTextField userF = new JTextField(12);
         JPasswordField passF = new JPasswordField(12);
 
-        JPanel p = new JPanel(new GridLayout(0, 2, 6, 6));
-        p.add(new JLabel("Server:"));   p.add(hostF);
-        p.add(new JLabel("Port:"));     p.add(portF);
-        p.add(new JLabel("Username:")); p.add(userF);
-        p.add(new JLabel("Password:")); p.add(passF);
+        JPanel fields = new JPanel(new GridLayout(0, 2, 6, 6));
+        fields.add(new JLabel("Server:"));   fields.add(hostF);
+        fields.add(new JLabel("Port:"));     fields.add(portF);
+        fields.add(new JLabel("Username:")); fields.add(userF);
+        fields.add(new JLabel("Password:")); fields.add(passF);
+        JPanel p = new JPanel(new BorderLayout(0, 8));
+        p.add(new JLabel("Connect to your chat server to log in or create an account."), BorderLayout.NORTH);
+        p.add(fields, BorderLayout.CENTER);
 
         String[] opts = {"Login", "Register", "Cancel"};
         while (true) {
@@ -60,18 +64,40 @@ public class ChatGUI extends JFrame {
 
             String user = userF.getText().trim();
             String pass = new String(passF.getPassword());
-            if (user.isEmpty() || pass.isEmpty() || user.contains(" ") || pass.contains(" ")) {
-                error("Username and password are required and cannot contain spaces.");
+            String host = hostF.getText().trim();
+            if (host.isEmpty()) {
+                error("Enter the server host name or IP address.");
+                continue;
+            }
+            if (!user.matches("[A-Za-z0-9_]{3,16}")) {
+                error("Username must be 3-16 letters, digits, or underscores.");
+                continue;
+            }
+            if (pass.isEmpty() || pass.matches(".*\\s.*")) {
+                error("Password is required and cannot contain whitespace.");
                 continue;
             }
             try {
-                connect(hostF.getText().trim(), Integer.parseInt(portF.getText().trim()),
-                        choice == 1 ? "REGISTER" : "LOGIN", user, pass);
+                int port = Integer.parseInt(portF.getText().trim());
+                if (port < 1 || port > 65535) {
+                    error("Port must be between 1 and 65535.");
+                    continue;
+                }
+                connect(host, port, choice == 1 ? "REGISTER" : "LOGIN", user, pass);
                 return true;
             } catch (NumberFormatException e) {
-                error("Port must be a number.");
+                error("Enter a valid port number, such as 5000.");
+            } catch (UnknownHostException e) {
+                error("Could not find server '" + host + "'. Check the host name or IP address.");
+                closeQuietly();
+            } catch (ConnectException e) {
+                error("Could not connect to " + host + ". Check that the server is running and the port is correct.");
+                closeQuietly();
+            } catch (SocketTimeoutException e) {
+                error("The server did not respond in time. Check your connection and try again.");
+                closeQuietly();
             } catch (IOException e) {
-                error(e.getMessage());
+                error(e.getMessage() == null ? "Could not complete sign-in." : e.getMessage());
                 closeQuietly();
             }
         }
@@ -85,7 +111,7 @@ public class ChatGUI extends JFrame {
         in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
         out = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), true);
 
-        in.readLine();                                   // welcome line
+        if (in.readLine() == null) throw new IOException("The server closed the connection before sign-in.");
         out.println(mode + " " + user + " " + pass);
         String resp = in.readLine();
         if (resp == null) throw new IOException("Server closed the connection.");
@@ -107,6 +133,9 @@ public class ChatGUI extends JFrame {
         chatPane.setEditable(false);
         userList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         groupList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        statusLabel.setText("Connected as " + username + "  |  Online users: 0  |  Groups: 0");
+        statusLabel.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
+        input.setToolTipText("Type a message to everyone, or use /help for chat commands.");
 
         // Double-click a user or group to prefill the command in the input box
         userList.addMouseListener(new MouseAdapter() {
@@ -164,14 +193,18 @@ public class ChatGUI extends JFrame {
         bottom.add(input, BorderLayout.CENTER);
         bottom.add(sendBtn, BorderLayout.EAST);
         bottom.setBorder(BorderFactory.createEmptyBorder(0, 6, 6, 6));
+        JPanel footer = new JPanel(new BorderLayout(0, 4));
+        footer.add(new JLabel("Enter sends to everyone. Double-click a user or group to start a private message."), BorderLayout.NORTH);
+        footer.add(bottom, BorderLayout.CENTER);
 
         JScrollPane chatScroll = new JScrollPane(chatPane);
         chatScroll.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
 
         setLayout(new BorderLayout());
+        add(statusLabel, BorderLayout.NORTH);
         add(chatScroll, BorderLayout.CENTER);
         add(side, BorderLayout.EAST);
-        add(bottom, BorderLayout.SOUTH);
+        add(footer, BorderLayout.SOUTH);
 
         sendBtn.addActionListener(e -> sendInput());
         input.addActionListener(e -> sendInput());
@@ -191,14 +224,18 @@ public class ChatGUI extends JFrame {
 
     private void startReaderThread() {
         Thread t = new Thread(() -> {
+            String disconnectMessage = "Disconnected from the server.";
             try {
                 String line;
                 while ((line = in.readLine()) != null) {
                     final String l = line;
                     SwingUtilities.invokeLater(() -> handleLine(l));
                 }
-            } catch (IOException ignored) { }
-            SwingUtilities.invokeLater(this::onDisconnected);
+            } catch (IOException e) {
+                disconnectMessage = "Connection lost: " + e.getMessage();
+            }
+            final String message = disconnectMessage;
+            SwingUtilities.invokeLater(() -> onDisconnected(message));
         }, "reader");
         t.setDaemon(true);
         t.start();
@@ -207,6 +244,10 @@ public class ChatGUI extends JFrame {
     private void sendInput() {
         String text = input.getText().trim();
         if (text.isEmpty()) return;
+        if (out == null || socket == null || socket.isClosed()) {
+            onDisconnected("Not connected to the server.");
+            return;
+        }
         out.println(text);      // the server echoes our own messages back, so no local echo
         input.setText("");
     }
@@ -239,11 +280,15 @@ public class ChatGUI extends JFrame {
 
         model.clear();
         for (String s : items) model.addElement(s);
+        statusLabel.setText("Connected as " + username + "  |  Online users: "
+                + userModel.size() + "  |  Groups: " + groupModel.size());
     }
 
     private Color colorFor(String line) {
         if (line.startsWith("ERR") || line.startsWith("No such") || line.startsWith("Usage")
-                || line.startsWith("Unknown") || line.startsWith("Invalid") || line.startsWith("Join the group"))
+                || line.startsWith("Unknown") || line.startsWith("Invalid") || line.startsWith("Join the group")
+                || line.contains("already exists") || line.contains("already logged in")
+                || line.startsWith("You are not"))
             return new Color(200, 50, 50);
         if (line.startsWith("* ") || line.startsWith("---")) return Color.GRAY;
         if (line.matches("^\\[[^\\]]+\\] \\(private\\) .*")) return new Color(160, 60, 200);
@@ -261,9 +306,11 @@ public class ChatGUI extends JFrame {
         chatPane.setCaretPosition(doc.getLength());
     }
 
-    private void onDisconnected() {
+    private void onDisconnected(String message) {
         if (refreshTimer != null) refreshTimer.stop();
-        append("--- Disconnected from server ---", Color.GRAY);
+        append("--- " + message + " ---", new Color(200, 50, 50));
+        statusLabel.setText("Disconnected from the server");
+        statusLabel.setForeground(new Color(200, 50, 50));
         input.setEnabled(false);
         sendBtn.setEnabled(false);
     }
