@@ -14,7 +14,7 @@ Requires Java 8+.
     javac ChatServer.java ChatClient.java ChatGUI.java
     java ChatServer          # terminal 1 (port 5000)
     java ChatClient          # terminal 2, 3, ... (optionally: java ChatClient <host> 
-    java ChatGUI             #ANY TERMINAL THIS COMMAND WILL OPEN THE GUI 
+    java ChatGUI             #RUN ON ANY TERMINAL THIS COMMAND WILL OPEN THE GUI Feature
     <port>)
 
 ## Commands (in the client)
