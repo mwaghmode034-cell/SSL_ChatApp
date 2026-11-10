@@ -105,7 +105,7 @@ public class ChatServer {
             if (!Files.exists(GROUPS_FILE)) return;
             for (String line : Files.readAllLines(GROUPS_FILE, StandardCharsets.UTF_8)) {
                 String[] parts = line.split(":", 2);
-                if (parts.length != 2 || !parts[0].matches("[A-Za-z0-9_]{1,20}")) {
+                if (parts.length != 2 || parts[0].length() > 20 || !parts[0].matches("[A-Za-z0-9_]+(?: [A-Za-z0-9_]+)*")) {
                     LOG.warning("Skipping malformed group record");
                     continue;
                 }
