@@ -7,6 +7,7 @@ Requires Java 8+.
 - Chat publicly with users connected to the server.
 - Send private messages, including to offline users (they can view them in history).
 - Create and manage chat groups, and send messages to group members.
+- Group names can contain spaces (up to 20 letters, digits, underscores, and spaces).
 - View online users, list groups, and retrieve recent message history.
 - Persist user records, chat history, groups, and group memberships across server restarts.
 
@@ -20,7 +21,7 @@ Requires Java 8+.
 ## Commands (in the client)
     <text>                         message everyone
     /msg <user> <text>             private message
-    /g <group> <text>              group message
+    /g <group name> <text>         group message
     /group create|join|leave|members <name>
     /group list
     /users   /history [n]   /help   /quit

@@ -309,8 +309,7 @@ public class ChatServer {
                     if (p.length < 3) { send("Usage: /msg <user> <text>"); break; }
                     privateMessage(p[1], p[2]); break;
                 case "/g":
-                    if (p.length < 3) { send("Usage: /g <group> <text>"); break; }
-                    groupMessage(p[1], p[2]); break;
+                    handleGroupMessage(line); break;
                 case "/group": handleGroup(line); break;
                 case "/history": sendHistory(p.length > 1 ? p[1] : "20"); break;
                 default: send("Unknown command. Type /help");
@@ -319,7 +318,7 @@ public class ChatServer {
         }
 
         private void handleGroup(String line) {
-            String[] p = line.split("\\s+");
+            String[] p = line.trim().split("\\s+", 3);
             if (p.length < 2) { send("Usage: /group create|join|leave|list|members <name>"); return; }
             String sub = p[1].toLowerCase();
             if (sub.equals("list")) {
@@ -327,10 +326,13 @@ public class ChatServer {
                 return;
             }
             if (p.length < 3) { send("Usage: /group " + sub + " <name>"); return; }
-            String g = p[2];
+            String g = p[2].trim().replaceAll("\\s+", " ");
             switch (sub) {
                 case "create":
-                    if (!g.matches("[A-Za-z0-9_]{1,20}")) { send("Invalid group name"); return; }
+                    if (g.length() > 20 || !g.matches("[A-Za-z0-9_]+(?: [A-Za-z0-9_]+)*")) {
+                        send("Invalid group name. Use up to 20 letters, digits, underscores, and spaces.");
+                        return;
+                    }
                     Set<String> newMembers = ConcurrentHashMap.newKeySet();
                     newMembers.add(username);
                     if (groups.putIfAbsent(g, newMembers) != null) { send("Group already exists"); return; }
@@ -382,6 +384,24 @@ public class ChatServer {
                 }
                 default: send("Unknown group command");
             }
+        }
+
+        private void handleGroupMessage(String line) {
+            String args = line.substring(2).trim();
+            String group = groups.keySet().stream()
+                    .filter(name -> args.startsWith(name + " "))
+                    .max(Comparator.comparingInt(String::length))
+                    .orElse(null);
+            if (group != null) {
+                String text = args.substring(group.length()).trim();
+                if (text.isEmpty()) { send("Usage: /g <group> <text>"); return; }
+                groupMessage(group, text);
+                return;
+            }
+
+            String[] parts = args.split("\\s+", 2);
+            if (parts.length < 2) { send("Usage: /g <group> <text>"); return; }
+            groupMessage(parts[0], parts[1]);
         }
 
         private void publicMessage(String text) {
