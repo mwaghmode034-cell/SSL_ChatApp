@@ -1,21 +1,24 @@
 # Java compiled output
 *.class
 
-# Local chat data and server logs
-/users.txt
-/history.log
-/groups.txt
-/server.log*
-
 # Build output
 /bin/
 /out/
 /target/
 
+# Server runtime data (users.txt has password hashes, history.log may contain private messages)
+/data/
+/users.txt
+/history.log
+/groups.txt
+/groups.txt.tmp
+/server.log*
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
 # Operating system files
 .DS_Store
 Thumbs.db
-*.class
-
-.idea/
-out/
