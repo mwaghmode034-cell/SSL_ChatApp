@@ -5,49 +5,65 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chat</title>
 <style>
-:root{--paper:#edf1f4;--card:#fff;--ink:#15232b;--muted:#5e7480;--side:#16343f;--side-ink:#cfe2e8;--line:#d5dee4;--me:#1f5f7a;--priv:#6a4fd6;--grp:#0b8a7e;--err:#b3372b}
+:root{--paper:#edf1f4;--card:#fff;--ink:#15232b;--muted:#5e7480;--side:#16343f;--side-ink:#cfe2e8;--line:#d5dee4;--me:#1f5f7a;--on:#2e9e5b;--err:#b3372b;--amber:#f0b429}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{font:15px/1.45 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif;color:var(--ink);background:var(--paper)}
-button,input,select{font:inherit}
-:focus-visible{outline:2px solid var(--priv);outline-offset:2px}
+button,input{font:inherit}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 #login{min-height:100%;display:grid;place-items:center;background:var(--side);padding:20px}
 .card{background:var(--card);border-radius:14px;padding:28px;width:min(400px,100%)}
 .card h1{font-size:26px;line-height:1.15;margin:0 0 8px}
 .card p{margin:0 0 14px;color:var(--muted)}
 label{display:block;font-weight:600;margin:12px 0 4px}
-input,select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
 button{padding:9px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);cursor:pointer}
 button.primary{background:var(--me);border-color:var(--me);color:#fff}
 .row{display:flex;gap:8px;margin-top:16px}
 .row button{flex:1}
 #err{color:var(--err);min-height:1.4em;margin-top:10px}
-#app{display:none;height:100dvh;grid-template-columns:250px 1fr}
-aside{background:var(--side);color:var(--side-ink);padding:14px;overflow:auto;display:flex;flex-direction:column;gap:14px}
-aside h2{font-size:14px;margin:0 0 6px;color:#fff}
-#who{font-size:13px}
-.list{display:flex;flex-direction:column;gap:2px}
-.list button{background:transparent;border:0;color:inherit;text-align:left;padding:6px 8px;border-radius:6px}
-.list button:hover{background:rgba(255,255,255,.14)}
-.list .empty{opacity:.65;padding:6px 8px;font-size:13px}
-.tools{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.tools button,#out{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.25);color:#fff;padding:6px}
-#out{margin-top:auto}
+
+#app{display:none;height:100dvh;grid-template-columns:310px 1fr}
+aside{background:var(--side);color:var(--side-ink);overflow:auto;padding:12px 8px;min-height:0}
+.me{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 8px 10px;font-size:13px}
+.me button{padding:4px 10px;background:transparent;border-color:rgba(255,255,255,.3);color:#fff}
+.sec{display:flex;align-items:center;justify-content:space-between;margin:14px 8px 4px;font-size:13px;color:#9fc0ca}
+.sec button{padding:2px 9px;background:transparent;border-color:rgba(255,255,255,.3);color:#fff;font-size:13px}
+.none{padding:6px 8px;font-size:13px;opacity:.65}
+.conv{display:flex;align-items:center;gap:10px;width:100%;background:transparent;border:0;color:inherit;text-align:left;padding:7px 8px;border-radius:8px}
+.conv:hover{background:rgba(255,255,255,.09)}
+.conv.on{background:rgba(255,255,255,.18)}
+.conv .nm{color:#fff;font-weight:600;line-height:1.2}
+.conv .sub{font-size:12px;opacity:.7}
+.badge{margin-left:auto;background:var(--amber);color:#2a2000;border-radius:10px;padding:0 7px;font-size:12px;font-weight:700}
+.av{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:600;font-size:14px;flex:none;position:relative}
+.dot{position:absolute;right:-2px;bottom:-2px;width:11px;height:11px;border-radius:50%;background:var(--on);border:2px solid var(--side)}
+
 main{display:flex;flex-direction:column;min-width:0;min-height:0}
-#msgs{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:10px}
-.msg{max-width:min(620px,85%);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;align-self:flex-start;overflow-wrap:anywhere}
-.meta{font-size:12px;color:var(--muted);margin-bottom:2px}
-.meta b{color:var(--ink);margin-right:8px}
-.meta span{margin-right:8px}
-.msg.private{background:#f1eeff;border-left:4px solid var(--priv)}
-.msg.group{background:#e8f6f4;border-left:4px solid var(--grp)}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line)}
+header .ht{flex:1;min-width:0}
+header h2{margin:0;font-size:17px;line-height:1.2}
+#hs{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#back{display:none;padding:4px 10px;font-size:20px;line-height:1}
+#msgs{flex:1;overflow:auto;padding:16px 18px;display:flex;flex-direction:column;gap:3px}
+.msg{max-width:min(560px,80%);padding:6px 10px 4px;border-radius:12px;background:var(--card);border:1px solid var(--line);align-self:flex-start;overflow-wrap:anywhere}
+.msg.first{margin-top:8px}
 .msg.own{align-self:flex-end;background:var(--me);border-color:var(--me);color:#fff}
-.msg.own .meta,.msg.own .meta b{color:#d3e6ee}
-.note{align-self:center;font-size:13px;color:var(--muted);white-space:pre-wrap;text-align:center}
+.msg .who{display:block;font-size:12.5px;font-weight:600}
+.msg time{float:right;margin:7px 0 0 12px;font-size:11px;opacity:.65}
+.day{align-self:center;font-size:12px;color:var(--muted);background:#dfe7ec;border-radius:10px;padding:2px 10px;margin:12px 0 4px}
+.note{align-self:center;font-size:13px;color:var(--muted);margin:4px 0;text-align:center;white-space:pre-wrap}
 .note.bad{color:var(--err)}
+.empty{margin:auto;color:var(--muted);text-align:center}
 #compose{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line);background:var(--card)}
-#compose select{width:200px;flex:none}
-@media(max-width:720px){#app{grid-template-columns:1fr;grid-template-rows:auto 1fr}aside{max-height:38vh}#compose select{width:120px}}
+@media(max-width:720px){
+  #app{grid-template-columns:1fr}
+  #app main{display:none}
+  #app.open main{display:flex}
+  #app.open aside{display:none}
+  #back{display:block}
+}
 </style>
 </head>
 <body>
@@ -63,43 +79,48 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0}
     <div class="row"><button class="primary">Log in</button><button type="button" id="reg">Create account</button></div>
   </form>
 </div>
- 
+
 <div id="app">
   <aside>
-    <div id="who"></div>
-    <section><h2>People online</h2><div class="list" id="users"></div></section>
-    <section><h2>Groups</h2><div class="list" id="groups"></div></section>
-    <div class="tools">
-      <button id="ng">New group</button><button id="jg">Join</button>
-      <button id="lg">Leave</button><button id="hs">History</button>
-    </div>
-    <button id="out">Log out</button>
+    <div class="me"><span id="who"></span><button id="out" type="button">Log out</button></div>
+    <div id="convs"></div>
   </aside>
   <main>
+    <header>
+      <button id="back" type="button" aria-label="Back to chats">&lsaquo;</button>
+      <div class="av" id="hav"></div>
+      <div class="ht"><h2 id="ht"></h2><div id="hs"></div></div>
+      <button id="act" type="button" hidden></button>
+    </header>
     <div id="msgs" aria-live="polite"></div>
     <form id="compose">
-      <select id="to" aria-label="Send to"></select>
       <input id="in" placeholder="Write a message" autocomplete="off">
       <button class="primary">Send</button>
     </form>
   </main>
 </div>
- 
+
 <script>
 const $ = s => document.querySelector(s);
-let sid, me, es, ended = false, users = [], groups = [];
- 
+const ERR = /^(ERR|No such|Usage|Unknown|Invalid|Join the group|Group already|You are not)/;
+let sid, me, es, ended = false, active = 'all', loading = true, stick = false, pend = false;
+let online = [], groups = [];
+const members = {}, convs = {};
+const conv = k => convs[k] || (convs[k] = { msgs: [], unread: 0 });
+const list = csv => csv === '(none)' ? [] : csv.split(/,\s*/).filter(Boolean);
+const hue = s => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
+
 function el(tag, cls, text) {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
   if (text !== undefined) n.textContent = text;
   return n;
 }
- 
+
 // ---------- login ----------
 $('#lf').onsubmit = e => { e.preventDefault(); login('login'); };
 $('#reg').onclick = () => login('register');
- 
+
 async function login(mode) {
   $('#err').textContent = '';
   const user = $('#u').value.trim();
@@ -114,107 +135,212 @@ async function login(mode) {
   }
   $('#login').style.display = 'none';
   $('#app').style.display = 'grid';
-  $('#who').textContent = 'Signed in as ' + me;
+  $('#who').textContent = me;
   es = new EventSource('/api/events?sid=' + sid);
   es.onmessage = e => onLine(e.data);
   es.addEventListener('closed', end);
   es.onerror = end;
-  refresh();
+  (async () => { await post('/history 200'); refresh(); })();
   setInterval(refresh, 10000);
-  $('#in').focus();
+  open('all');
 }
- 
+
 function end() {
   if (ended) return;
   ended = true;
   es.close();
-  note('Disconnected from the server. Reload the page to log in again.', true);
+  note(active, 'Disconnected from the server. Reload the page to log in again.', true);
   $('#in').disabled = true;
 }
- 
-// ---------- server lines ----------
+
+// ---------- incoming lines -> conversations ----------
 function onLine(line) {
-  if (line.startsWith('Online: ')) { users = list(line.slice(8)); draw('users', users, 'u:'); buildTo(); return; }
-  if (line.startsWith('Groups: ')) { groups = list(line.slice(8)); draw('groups', groups, 'g:'); buildTo(); return; }
-  if (line.startsWith('* ')) refresh();                 // someone joined or left
   let m;
+  if (line.startsWith('Online: ')) { online = list(line.slice(8)); return ui(); }
+  if (line.startsWith('Groups: ')) { groups = list(line.slice(8)); return ui(); }
+  if (m = line.match(/^Members of (\S+): (.*)$/)) { members[m[1]] = list(m[2]); return ui(); }
+  if (line.startsWith('--- ')) { if (line.includes('end of history')) loading = false; return; }
+  if (m = line.match(/^\* (\S+) (joined|left) group (\S+)$/)) {
+    note('g:' + m[3], m[1] + ' ' + m[2] + ' the group');
+    if (active === 'g:' + m[3]) post('/group members ' + m[3]);
+    return;
+  }
+  if (line.startsWith('* ')) { note('all', line.slice(2)); refresh(); return; }
   if (m = line.match(/^\[([^\]]+)\] \(private\) (\S+) -> (\S+): (.*)$/))
-    bubble('private', m[2], m[1], m[4], m[2] === me ? 'private to ' + m[3] : 'private');
-  else if (m = line.match(/^\[([^\]]+)\] \[([^\]]+)\] (\S+): (.*)$/))
-    bubble('group', m[3], m[1], m[4], 'in ' + m[2]);
-  else if (m = line.match(/^\[([^\]]+)\] (\S+): (.*)$/))
-    bubble('all', m[2], m[1], m[3], '');
-  else note(line, /^(ERR|No such|Usage|Unknown|Invalid|Join the group|Group already|You are not)/.test(line));
+    return msg('u:' + (m[2] === me ? m[3] : m[2]), m[2], m[1], m[4]);
+  if (m = line.match(/^\[([^\]]+)\] \[([^\]]+)\] (\S+): (.*)$/))
+    return msg('g:' + m[2], m[3], m[1], m[4]);
+  if (m = line.match(/^\[([^\]]+)\] (\S+): (.*)$/))
+    return msg('all', m[2], m[1], m[3]);
+  note(active, line, ERR.test(line));
 }
- 
-const list = csv => csv === '(none)' ? [] : csv.split(/,\s*/).filter(Boolean);
- 
-function bubble(kind, from, ts, text, tag) {
-  const d = el('div', 'msg ' + kind + (from === me ? ' own' : ''));
-  const meta = el('div', 'meta');
-  meta.title = ts;
-  meta.append(el('b', '', from === me ? 'You' : from), el('span', '', ts.slice(11, 16)));
-  if (tag) meta.append(el('span', '', tag));
-  d.append(meta, el('div', '', text));
-  push(d);
+
+function msg(key, from, ts, text) {
+  const c = conv(key);
+  c.msgs.push({ from, ts, text });
+  if (key !== active && from !== me && !loading) c.unread++;
+  ui();
 }
- 
-function note(text, bad) { push(el('div', 'note' + (bad ? ' bad' : ''), text)); }
- 
-function push(n) {
-  const b = $('#msgs');
-  const near = b.scrollHeight - b.scrollTop - b.clientHeight < 80;
-  b.append(n);
-  if (near) b.scrollTop = b.scrollHeight;
+
+function note(key, text, bad) {
+  conv(key).msgs.push({ note: true, text, bad });
+  ui();
 }
- 
-// ---------- sidebar and target ----------
-function draw(id, arr, prefix) {
-  const box = $('#' + id);
+
+// ---------- rendering ----------
+function ui() {
+  if (pend) return;
+  pend = true;
+  requestAnimationFrame(() => { pend = false; side(); header(); render(); title(); });
+}
+
+function avatar(key, name, isOnline) {
+  const a = el('div', 'av', key === 'all' ? 'All' : key[0] === 'g' ? '#' : name[0].toUpperCase());
+  a.style.background = key === 'all' ? 'var(--me)' : 'hsl(' + hue(name) + ',45%,38%)';
+  if (isOnline) a.append(el('span', 'dot'));
+  return a;
+}
+
+function row(key, name, sub, isOnline) {
+  const b = el('button', 'conv' + (key === active ? ' on' : ''));
+  b.type = 'button';
+  const t = el('div');
+  t.append(el('div', 'nm', name), el('div', 'sub', sub));
+  b.append(avatar(key, name, isOnline), t);
+  const n = conv(key).unread;
+  if (n) b.append(el('span', 'badge', n));
+  b.onclick = () => open(key);
+  return b;
+}
+
+function side() {
+  const box = $('#convs');
   box.innerHTML = '';
-  if (!arr.length) box.append(el('div', 'empty', id === 'groups' ? 'No groups yet' : 'Nobody yet'));
-  arr.forEach(name => {
-    const b = el('button', '', name === me ? name + ' (you)' : name);
-    b.type = 'button';
-    if (name !== me) b.onclick = () => { $('#to').value = prefix + name; $('#in').focus(); };
+  box.append(row('all', 'Everyone', online.length + ' online'));
+
+  const people = [...new Set([...online.filter(u => u !== me),
+    ...Object.keys(convs).filter(k => k.startsWith('u:')).map(k => k.slice(2))])].sort();
+  box.append(el('div', 'sec', 'People'));
+  if (!people.length) box.append(el('div', 'none', 'Nobody else is online yet'));
+  people.forEach(u => box.append(row('u:' + u, u, online.includes(u) ? 'Online' : 'Offline', online.includes(u))));
+
+  const sec = el('div', 'sec');
+  const add = el('button', '', 'New group');
+  add.type = 'button';
+  add.onclick = newGroup;
+  sec.append(el('span', '', 'Groups'), add);
+  box.append(sec);
+  const gs = [...new Set([...groups, ...Object.keys(convs).filter(k => k.startsWith('g:')).map(k => k.slice(2))])].sort();
+  if (!gs.length) box.append(el('div', 'none', 'No groups yet'));
+  gs.forEach(g => box.append(row('g:' + g, g, members[g] ? members[g].length + ' members' : 'Group')));
+}
+
+function header() {
+  const name = active.slice(2);
+  $('#ht').textContent = active === 'all' ? 'Everyone' : name;
+  const hav = avatar(active, name || 'All', false);
+  $('#hav').replaceWith(hav);
+  hav.id = 'hav';
+  let sub = '', act = null;
+  if (active === 'all') sub = online.length ? online.join(', ') : 'No one online';
+  else if (active[0] === 'u') sub = online.includes(name) ? 'Online' : 'Offline';
+  else {
+    const m = members[name];
+    sub = m ? m.length + ' members: ' + m.join(', ') : 'Loading members...';
+    if (m) act = m.includes(me) ? 'Leave group' : 'Join group';
+  }
+  $('#hs').textContent = sub;
+  $('#act').hidden = !act;
+  $('#act').textContent = act || '';
+}
+
+function dayLabel(d) {
+  const f = x => x.toLocaleDateString('sv');
+  const now = new Date(), y = new Date(now - 864e5);
+  return d === f(now) ? 'Today' : d === f(y) ? 'Yesterday' : d;
+}
+
+function render() {
+  const box = $('#msgs');
+  const near = stick || box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+  stick = false;
+  box.innerHTML = '';
+  const c = conv(active);
+  if (!c.msgs.length) {
+    box.append(el('div', 'empty', active === 'all' ? 'No messages yet. Say hello to everyone.'
+      : active[0] === 'u' ? 'No messages with ' + active.slice(2) + ' yet.' : 'No messages in this group yet.'));
+  }
+  let prev = null, day = '';
+  c.msgs.forEach(m => {
+    if (m.note) { box.append(el('div', 'note' + (m.bad ? ' bad' : ''), m.text)); prev = null; return; }
+    const d = m.ts.slice(0, 10);
+    if (d !== day) { day = d; box.append(el('div', 'day', dayLabel(d))); prev = null; }
+    const own = m.from === me, first = !prev || prev.from !== m.from;
+    const b = el('div', 'msg' + (own ? ' own' : '') + (first ? ' first' : ''));
+    if (first && !own && active[0] !== 'u') {
+      const w = el('span', 'who', m.from);
+      w.style.color = 'hsl(' + hue(m.from) + ',55%,35%)';
+      b.append(w);
+    }
+    const tm = el('time', '', m.ts.slice(11, 16));
+    tm.title = m.ts;
+    b.append(el('span', '', m.text), tm);
     box.append(b);
+    prev = m;
   });
+  if (near) box.scrollTop = box.scrollHeight;
 }
- 
-function buildTo() {
-  const sel = $('#to'), cur = sel.value || 'all';
-  sel.innerHTML = '';
-  const opt = (v, t) => { const o = el('option', '', t); o.value = v; sel.append(o); };
-  opt('all', 'Everyone');
-  users.filter(u => u !== me).forEach(u => opt('u:' + u, 'Private: ' + u));
-  groups.forEach(g => opt('g:' + g, 'Group: ' + g));
-  sel.value = [...sel.options].some(o => o.value === cur) ? cur : 'all';
+
+function title() {
+  const n = Object.values(convs).reduce((a, c) => a + c.unread, 0);
+  document.title = (n ? '(' + n + ') ' : '') + 'Chat';
 }
- 
+
+function open(key) {
+  active = key;
+  conv(key).unread = 0;
+  stick = true;
+  $('#app').classList.add('open');
+  if (key[0] === 'g') post('/group members ' + key.slice(2));
+  ui();
+  $('#in').focus();
+}
+
 // ---------- sending ----------
 function post(line) {
-  if (!ended) fetch('/api/send?sid=' + sid, { method: 'POST', body: line }).catch(end);
+  if (ended) return Promise.resolve();
+  return fetch('/api/send?sid=' + sid, { method: 'POST', body: line }).catch(end);
 }
 function refresh() { post('/users'); post('/group list'); }
- 
+
 $('#compose').onsubmit = e => {
   e.preventDefault();
-  const t = $('#in').value.trim(), v = $('#to').value;
+  const t = $('#in').value.trim();
   if (!t) return;
   let line = t;
   if (!t.startsWith('/')) {
-    if (v.startsWith('u:')) line = '/msg ' + v.slice(2) + ' ' + t;
-    else if (v.startsWith('g:')) line = '/g ' + v.slice(2) + ' ' + t;
+    if (active[0] === 'u') line = '/msg ' + active.slice(2) + ' ' + t;
+    else if (active[0] === 'g') line = '/g ' + active.slice(2) + ' ' + t;
   }
   post(line);
   $('#in').value = '';
 };
- 
-const grp = q => { const v = $('#to').value; return v.startsWith('g:') ? v.slice(2) : (prompt(q) || '').trim(); };
-$('#ng').onclick = () => { const n = (prompt('Name for the new group') || '').trim(); if (n) { post('/group create ' + n); refresh(); } };
-$('#jg').onclick = () => { const g = grp('Group to join'); if (g) { post('/group join ' + g); refresh(); } };
-$('#lg').onclick = () => { const g = grp('Group to leave'); if (g) { post('/group leave ' + g); refresh(); } };
-$('#hs').onclick = () => { $('#msgs').innerHTML = ''; post('/history 50'); };
+
+async function newGroup() {
+  const n = (prompt('Name for the new group (letters, digits, _)') || '').trim();
+  if (!n) return;
+  await post('/group create ' + n);
+  refresh();
+  open('g:' + n);
+}
+
+$('#act').onclick = async () => {
+  const g = active.slice(2), joined = (members[g] || []).includes(me);
+  await post('/group ' + (joined ? 'leave ' : 'join ') + g);
+  await post('/group members ' + g);
+  refresh();
+};
+$('#back').onclick = () => $('#app').classList.remove('open');
 $('#out').onclick = async () => {
   if (!ended) await fetch('/api/logout?sid=' + sid, { method: 'POST' }).catch(() => {});
   location.reload();
