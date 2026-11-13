@@ -441,7 +441,7 @@ public class ChatServer {
         private void sendHistory(String arg) {
             int n;
             try { n = Math.max(1, Math.min(200, Integer.parseInt(arg))); }
-            catch (NumberFormatException e) { n = 20; }
+            catch (NumberFormatException e) { send("Usage: /history [n] (1-200)"); return; }
             List<String> visible = new ArrayList<>();
             synchronized (history) {   // required when iterating a synchronizedList
                 for (Message m : history) {
