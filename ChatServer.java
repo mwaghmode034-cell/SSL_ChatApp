@@ -451,9 +451,11 @@ public class ChatServer {
                     if (ok) visible.add(m.format());
                 }
             }
-            send("--- last " + Math.min(n, visible.size()) + " messages ---");
-            for (String s : visible.subList(Math.max(0, visible.size() - n), visible.size())) send(s);
-            send("--- end of history ---");
+            synchronized (this) {
+                send("--- last " + Math.min(n, visible.size()) + " messages ---");
+                for (String s : visible.subList(Math.max(0, visible.size() - n), visible.size())) send(s);
+                send("--- end of history ---");
+            }
         }
 
         private void sendHelp() {

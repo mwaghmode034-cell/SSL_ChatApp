@@ -8,6 +8,7 @@ Requires Java 8+ (a JDK, so that `javac` is available) and a bash shell (Linux/m
 - Public chat, private messages (also to offline users, readable later via history).
 - Chat groups: create, join, leave, list members; names may contain spaces (up to 20 letters, digits, underscores, spaces).
 - Every message has a timestamp; `/history` shows recent messages the user is allowed to see.
+- The GUI shows sender and time details, wraps long messages, and opens history in a separate scrollable window.
 - Users, history, groups and memberships survive server restarts.
 - Server event log (`server.log`).
 - Optional Swing GUI client.

@@ -3,6 +3,8 @@ import java.awt.event.*;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import javax.swing.*;
 
 /**
@@ -33,6 +35,12 @@ public class ChatGUI extends JFrame {
 
     private final JPanel chatMessages = new JPanel();
     private JScrollPane chatScroll;
+    private JDialog historyDialog;
+    private JPanel historyMessages;
+    private JScrollPane historyScroll;
+    private final List<String> historyLines = new ArrayList<>();
+    private boolean historyRequestPending;
+    private boolean collectingHistory;
     private final DefaultListModel<String> userModel = new DefaultListModel<>();
     private final DefaultListModel<String> groupModel = new DefaultListModel<>();
     private final JList<String> userList = new JList<>(userModel);
@@ -41,6 +49,20 @@ public class ChatGUI extends JFrame {
     private final JButton sendBtn = new JButton("Send");
     private final JLabel statusLabel = new JLabel("Not connected");
     private javax.swing.Timer refreshTimer;
+
+    private static class MessageDetails {
+        final String timestamp;
+        final String sender;
+        final String context;
+        final String text;
+
+        MessageDetails(String timestamp, String sender, String context, String text) {
+            this.timestamp = timestamp;
+            this.sender = sender;
+            this.context = context;
+            this.text = text;
+        }
+    }
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
@@ -217,7 +239,7 @@ public class ChatGUI extends JFrame {
             String g = pickGroup("Group to leave:");
             if (g != null) { out.println("/group leave " + g); requestRefresh(); }
         });
-        hist.addActionListener(e -> out.println("/history 50"));
+        hist.addActionListener(e -> openHistory());
 
         JPanel buttons = new JPanel(new GridLayout(2, 2, 4, 4));
         buttons.add(newG);
@@ -362,6 +384,21 @@ public class ChatGUI extends JFrame {
     // -------------------------------------------------------- handling output
 
     private void handleLine(String line) {
+        if (historyRequestPending && line.startsWith("--- last ") && line.endsWith(" messages ---")) {
+            collectingHistory = true;
+            historyLines.clear();
+            return;
+        }
+        if (collectingHistory) {
+            if (line.equals("--- end of history ---")) {
+                collectingHistory = false;
+                historyRequestPending = false;
+                showHistoryMessages();
+            } else {
+                historyLines.add(line);
+            }
+            return;
+        }
         if (line.startsWith("Online: ")) { updateList(userModel, line.substring(8)); return; }
         if (line.startsWith("Groups: ")) { updateList(groupModel, line.substring(8)); return; }
         if (line.startsWith("* ")) requestRefresh();   // someone joined/left: refresh sidebar
@@ -393,47 +430,79 @@ public class ChatGUI extends JFrame {
     }
 
     private void append(String text, Color c) {
+        appendMessage(chatMessages, chatScroll, text, c);
+    }
+
+    private void appendMessage(JPanel target, JScrollPane scroll, String line, Color color) {
         JPanel row = new JPanel(new BorderLayout());
         row.setOpaque(false);
         row.setBorder(BorderFactory.createEmptyBorder(3, 8, 3, 8));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        if (text.startsWith("* ") || text.startsWith("---")) {
-            JLabel notice = new JLabel(text, SwingConstants.CENTER);
+        if (line.startsWith("* ") || line.startsWith("---")) {
+            JLabel notice = new JLabel(line, SwingConstants.CENTER);
             notice.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-            notice.setForeground(c == null ? MUTED : c);
+            notice.setForeground(color == null ? MUTED : color);
             row.add(notice, BorderLayout.CENTER);
         } else {
-            boolean outgoing = isOwnMessage(text);
-            JTextArea bubble = new JTextArea(text);
-            bubble.setEditable(false);
-            bubble.setFocusable(false);
-            bubble.setLineWrap(true);
-            bubble.setWrapStyleWord(true);
-            bubble.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-            bubble.setForeground(isErrorLine(text) ? new Color(185, 55, 55)
-                    : (c == null ? TEXT : c));
-            bubble.setBackground(isErrorLine(text) ? ERROR_BUBBLE
-                    : (outgoing ? OUTGOING_BUBBLE : SURFACE));
+            MessageDetails details = parseMessage(line);
+            boolean error = isErrorLine(line);
+            boolean outgoing = details != null && details.sender.equals(username);
+            Color bubbleColor = error ? ERROR_BUBBLE : (outgoing ? OUTGOING_BUBBLE : SURFACE);
+            JPanel bubble = new JPanel(new BorderLayout(0, 4));
+            bubble.setBackground(bubbleColor);
+            bubble.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(BORDER, 1, true),
+                    BorderFactory.createEmptyBorder(7, 10, 7, 10)));
 
-            FontMetrics metrics = bubble.getFontMetrics(bubble.getFont());
-            int desiredWidth = Math.min(390, Math.max(150, metrics.stringWidth(text) + 24));
+            String bodyText = details == null ? line : details.text;
+            if (details != null || error) {
+                JPanel meta = new JPanel(new BorderLayout(8, 0));
+                meta.setOpaque(false);
+                JLabel sender = new JLabel(error ? "Notice"
+                        : details.sender + (details.context.isEmpty() ? "" : "  |  " + details.context));
+                sender.setFont(new Font("Segoe UI", Font.BOLD, 11));
+                sender.setForeground(error ? new Color(185, 55, 55) : (color == null ? TEXT : color));
+                meta.add(sender, BorderLayout.WEST);
+                if (details != null) {
+                    JLabel time = new JLabel(displayTime(details.timestamp));
+                    time.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+                    time.setForeground(MUTED);
+                    meta.add(time, BorderLayout.EAST);
+                }
+                bubble.add(meta, BorderLayout.NORTH);
+            }
+
+            JTextArea body = new JTextArea(bodyText);
+            body.setEditable(false);
+            body.setFocusable(false);
+            body.setOpaque(false);
+            body.setLineWrap(true);
+            body.setWrapStyleWord(true);
+            body.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+            body.setForeground(error ? new Color(185, 55, 55) : TEXT);
+            FontMetrics metrics = body.getFontMetrics(body.getFont());
+            String senderText = details == null ? "" : details.sender + details.context;
+            int metaWidth = metrics.stringWidth(senderText)
+                    + (details == null ? 0 : metrics.stringWidth(displayTime(details.timestamp)));
+            int desiredWidth = Math.min(390, Math.max(150,
+                    Math.max(metrics.stringWidth(bodyText), metaWidth) + 24));
             int columnWidth = Math.max(1, metrics.charWidth('m'));
-            int columns = Math.max(12, Math.min(42,
-                    (desiredWidth - 24) / columnWidth));
-            bubble.setColumns(columns);
-            bubble.setRows(wrappedLineCount(text, metrics, columns * columnWidth));
-            bubble.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
+            int columns = Math.max(12, Math.min(42, (desiredWidth - 24) / columnWidth));
+            body.setColumns(columns);
+            body.setRows(wrappedLineCount(bodyText, metrics, columns * columnWidth));
+            body.setBorder(BorderFactory.createEmptyBorder());
+            bubble.add(body, BorderLayout.CENTER);
             row.add(bubble, outgoing ? BorderLayout.EAST : BorderLayout.WEST);
         }
 
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
-        chatMessages.add(row);
-        chatMessages.add(Box.createVerticalStrut(2));
-        chatMessages.revalidate();
-        chatMessages.repaint();
+        target.add(row);
+        target.add(Box.createVerticalStrut(2));
+        target.revalidate();
+        target.repaint();
         SwingUtilities.invokeLater(() ->
-                chatScroll.getVerticalScrollBar().setValue(chatScroll.getVerticalScrollBar().getMaximum()));
+                scroll.getVerticalScrollBar().setValue(scroll.getVerticalScrollBar().getMaximum()));
     }
 
     private boolean isErrorLine(String line) {
@@ -443,11 +512,38 @@ public class ChatGUI extends JFrame {
                 || line.startsWith("You are not");
     }
 
-    private boolean isOwnMessage(String line) {
-        if (!line.startsWith("[")) return false;
-        return line.contains("] " + username + ": ")
-                || line.contains("] (private) " + username + " -> ")
-                || line.contains(" -> " + username + ": ");
+    private MessageDetails parseMessage(String line) {
+        if (!line.startsWith("[")) return null;
+        int timestampEnd = line.indexOf("] ");
+        if (timestampEnd < 0) return null;
+        String timestamp = line.substring(1, timestampEnd);
+        String message = line.substring(timestampEnd + 2);
+
+        if (message.startsWith("(private) ")) {
+            int arrow = message.indexOf(" -> ", 10);
+            int separator = arrow < 0 ? -1 : message.indexOf(": ", arrow + 4);
+            if (separator < 0) return null;
+            String sender = message.substring(10, arrow);
+            String recipient = message.substring(arrow + 4, separator);
+            String context = sender.equals(username) ? "To " + recipient : "Private";
+            return new MessageDetails(timestamp, sender, context, message.substring(separator + 2));
+        }
+
+        String context = "";
+        if (message.startsWith("[")) {
+            int groupEnd = message.indexOf("] ");
+            if (groupEnd < 0) return null;
+            context = message.substring(1, groupEnd);
+            message = message.substring(groupEnd + 2);
+        }
+        int separator = message.indexOf(": ");
+        if (separator < 0) return null;
+        return new MessageDetails(timestamp, message.substring(0, separator), context,
+                message.substring(separator + 2));
+    }
+
+    private String displayTime(String timestamp) {
+        return timestamp.length() >= 16 ? timestamp.substring(0, 16) : timestamp;
     }
 
     private int wrappedLineCount(String text, FontMetrics metrics, int width) {
@@ -468,6 +564,82 @@ public class ChatGUI extends JFrame {
             lineWidth += characterWidth;
         }
         return lines;
+    }
+
+    private void openHistory() {
+        if (historyDialog == null) createHistoryDialog();
+        historyDialog.setVisible(true);
+        historyDialog.toFront();
+        if (historyRequestPending) return;
+
+        historyRequestPending = true;
+        collectingHistory = false;
+        historyLines.clear();
+        setHistoryPlaceholder("Loading recent messages...");
+        if (out == null || socket == null || socket.isClosed()) {
+            historyRequestPending = false;
+            setHistoryPlaceholder("History is unavailable while disconnected.");
+            return;
+        }
+        out.println("/history 100");
+    }
+
+    private void createHistoryDialog() {
+        historyMessages = new JPanel();
+        historyMessages.setLayout(new BoxLayout(historyMessages, BoxLayout.Y_AXIS));
+        historyMessages.setBackground(CHAT_BACKGROUND);
+        historyMessages.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        historyScroll = new JScrollPane(historyMessages);
+        historyScroll.setBorder(BorderFactory.createEmptyBorder());
+        historyScroll.getViewport().setBackground(CHAT_BACKGROUND);
+        historyScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+
+        JLabel title = new JLabel("Recent messages");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        title.setForeground(TEXT);
+        JLabel subtitle = new JLabel("Messages visible to your account");
+        subtitle.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        subtitle.setForeground(MUTED);
+        JPanel heading = new JPanel();
+        heading.setBackground(SURFACE);
+        heading.setLayout(new BoxLayout(heading, BoxLayout.Y_AXIS));
+        heading.add(title);
+        heading.add(Box.createVerticalStrut(3));
+        heading.add(subtitle);
+        heading.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
+                BorderFactory.createEmptyBorder(12, 16, 12, 16)));
+
+        historyDialog = new JDialog(this, "Chat history", false);
+        historyDialog.setDefaultCloseOperation(WindowConstants.HIDE_ON_CLOSE);
+        historyDialog.setLayout(new BorderLayout());
+        historyDialog.add(heading, BorderLayout.NORTH);
+        historyDialog.add(historyScroll, BorderLayout.CENTER);
+        historyDialog.setSize(720, 520);
+        historyDialog.setLocationRelativeTo(this);
+    }
+
+    private void showHistoryMessages() {
+        historyMessages.removeAll();
+        if (historyLines.isEmpty()) {
+            setHistoryPlaceholder("No messages in your history yet.");
+            return;
+        }
+        for (String line : historyLines) appendMessage(historyMessages, historyScroll, line, colorFor(line));
+        historyMessages.revalidate();
+        historyMessages.repaint();
+    }
+
+    private void setHistoryPlaceholder(String text) {
+        historyMessages.removeAll();
+        JLabel placeholder = new JLabel(text, SwingConstants.CENTER);
+        placeholder.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        placeholder.setForeground(MUTED);
+        placeholder.setBorder(BorderFactory.createEmptyBorder(24, 12, 24, 12));
+        placeholder.setAlignmentX(Component.LEFT_ALIGNMENT);
+        historyMessages.add(placeholder);
+        historyMessages.revalidate();
+        historyMessages.repaint();
     }
 
     private void addLoginField(JPanel fields, String label, JTextField field) {
@@ -520,6 +692,11 @@ public class ChatGUI extends JFrame {
 
     private void onDisconnected(String message) {
         if (refreshTimer != null) refreshTimer.stop();
+        if (historyRequestPending) {
+            historyRequestPending = false;
+            collectingHistory = false;
+            if (historyMessages != null) setHistoryPlaceholder("Could not load history: " + message);
+        }
         append("--- " + message + " ---", new Color(200, 50, 50));
         statusLabel.setText("Disconnected from the server");
         statusLabel.setForeground(new Color(255, 205, 205));
