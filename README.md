@@ -5,6 +5,7 @@ Requires Java 8+ (a JDK, so that `javac` is available) and a bash shell (Linux/m
 
 ## Features
 - Register and log in with a username and password (salted PBKDF2-HMAC-SHA256 hashes).
+- A connection is closed after five failed login attempts.
 - Public chat, private messages (also to offline users, readable later via history).
 - Chat groups: create, join, leave, list members; names may contain spaces (up to 20 letters, digits, underscores, spaces).
 - Every message has a timestamp; `/history` shows recent messages the user is allowed to see.
