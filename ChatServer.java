@@ -22,6 +22,7 @@ public class ChatServer {
     private static final int PASSWORD_ITERATIONS = 210_000;
     private static final int PASSWORD_SALT_BYTES = 16;
     private static final int PASSWORD_HASH_BYTES = 32;
+    private static final int MAX_FAILED_LOGIN_ATTEMPTS = 5;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     // Shared state (thread-safe collections)
@@ -261,6 +262,7 @@ public class ChatServer {
         }
 
         private boolean authenticate() throws IOException {
+            int failedLoginAttempts = 0;
             send("Welcome! Use: LOGIN <user> <pass>  or  REGISTER <user> <pass>");
             String line;
             while ((line = in.readLine()) != null) {
@@ -280,6 +282,11 @@ public class ChatServer {
                     String h = users.get(name);
                     if (h == null || (!justRegistered && !verifyPassword(pw, h))) {
                         LOG.warning("Failed login for '" + name + "'");
+                        failedLoginAttempts++;
+                        if (failedLoginAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+                            send("ERR Too many failed authentication attempts; reconnect to try again");
+                            return false;
+                        }
                         send("ERR Invalid username or password");
                         continue;
                     }
