@@ -5,7 +5,7 @@
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,positioning,fit,calc}
 
-\definecolor{ink}{HTML}{14283F}
+\definecolor{ink}{HTML}{006B50}
 \definecolor{bluegray}{HTML}{486176}
 \definecolor{teal}{HTML}{087F8C}
 \definecolor{tealLight}{HTML}{E4F3F3}
@@ -97,7 +97,7 @@
   \end{tikzpicture}
   \vspace{1.25cm}
   \begin{minipage}{0.68\textwidth}
-    \eyebrow{PROJECT 09 \quad | \quad NETWORKED SYSTEMS}
+    \eyebrow{PROJECT 09 \quad | \quad \textbf{NETWORKED SYSTEMS}}
     \vspace{0.42cm}
 
     {\color{white}\Huge\bfseries Multi-client\\[0.05cm] Chat Application}
@@ -593,11 +593,8 @@ Totals are not additive; measurements are from one run.
   \vspace{0.38cm}
   \begin{beamercolorbox}[wd=\textwidth,sep=0.22cm,rounded=true]{card}
     \centering
-    \large
-The key lesson: concurrency is not just about handling
-multiple clients. It is about keeping messages, user
-accounts and chat history consistent while preventing
-slow operations from blocking others.
+    \large The central lesson: concurrency is not only about serving many clients;
+    it is about preserving message, identity and persistence invariants while slow work is isolated.
   \end{beamercolorbox}
 
   \vspace{0.42cm}
