@@ -1,0 +1,26 @@
+
+method                    calls     total ms       avg ms
+register                     22      51706.1    2350.2789
+hashPassword                 22      51613.4    2346.0652
+publicMessage             10020      22018.9       2.1975
+send                     201134       8347.7       0.0415
+storeMessage              10060       3354.7       0.3335
+login                         2         94.4      47.2231
+verifyPassword                2         94.4      47.2085
+cmd /history                 20         86.5       4.3272
+sendHistory                  20         85.5       4.2733
+saveUser                     22         67.9       3.0877
+cmd /g                       20         54.4       2.7212
+cmd /group create            20         45.7       2.2848
+groupMessage                 20         39.9       1.9951
+saveGroups                   22         29.8       1.3530
+cmd /msg                     20         11.8       0.5877
+privateMessage               20         10.7       0.5346
+cmd /group join              20          5.3       0.2629
+cmd /group leave             20          4.5       0.2273
+cmd /group members           20          4.1       0.2049
+cmd /group mine              20          2.0       0.0983
+cmd /group list              20          1.7       0.0854
+cmd /users                   20          1.6       0.0815
+cmd /quit                     2          0.1       0.0451
+(total includes time spent waiting for locks; threads overlap, so totals can exceed the run time)

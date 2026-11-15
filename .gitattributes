@@ -1,0 +1,2 @@
+# Keep shell scripts with Unix line endings so bash can run them on every OS
+*.sh text eol=lf

@@ -12,11 +12,13 @@ import javax.swing.*;
  * Compile: javac ChatServer.java ChatClient.java ChatGUI.java
  * Run:     java ChatGUI
  *
- * Uses the same text protocol as ChatClient, so no server changes are needed.
+ * Uses the same text protocol as ChatClient. Click a person or group in the sidebar to choose who you
+ * are writing to; the input box then holds only your message and the GUI adds the /msg or /g command.
  * Networking is read on a background thread; every Swing update goes through
  * SwingUtilities.invokeLater so the UI never freezes or gets corrupted.
  */
 public class ChatGUI extends JFrame {
+    private static final long serialVersionUID = 1L;
     private static final Color PAGE = new Color(240, 242, 245);
     private static final Color CHAT_BACKGROUND = new Color(239, 234, 226);
     private static final Color SURFACE = Color.WHITE;
@@ -49,6 +51,14 @@ public class ChatGUI extends JFrame {
     private final JButton sendBtn = new JButton("Send");
     private final JLabel statusLabel = new JLabel("Not connected");
     private javax.swing.Timer refreshTimer;
+
+    // Who the next message goes to: "ALL" (public), "USER" (private) or "GROUP". Chosen by clicking the sidebar.
+    private String targetType = "ALL";
+    private String targetName = null;
+    private boolean updatingSelection = false;          // true while code (not the user) changes list selection
+    private final List<String> allGroups = new ArrayList<>();   // every group on the server (for the Join dialog)
+    private final JLabel conversationName = new JLabel("Everyone");
+    private final JLabel conversationDetail = new JLabel("Public conversation");
 
     private static class MessageDetails {
         final String timestamp;
@@ -155,6 +165,10 @@ public class ChatGUI extends JFrame {
 
     /** Connects and authenticates (blocking, with timeouts). Throws IOException with a user-friendly message. */
     private void connect(String host, int port, String mode, String user, String pass) throws IOException {
+        long t0 = Prof.start();
+        try { connect0(host, port, mode, user, pass); } finally { Prof.end("connect", t0); }
+    }
+    private void connect0(String host, int port, String mode, String user, String pass) throws IOException {
         socket = new Socket();
         socket.connect(new InetSocketAddress(host, port), 5000);
         socket.setSoTimeout(5000);
@@ -200,18 +214,14 @@ public class ChatGUI extends JFrame {
         input.setBorder(BorderFactory.createLineBorder(BORDER));
         styleButton(sendBtn, true);
 
-        // Double-click a user or group to prefill the command in the input box
-        userList.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2 && userList.getSelectedValue() != null)
-                    prefill("/msg " + userList.getSelectedValue() + " ");
-            }
+        // Clicking a person or group chooses the target of the next messages (nothing is typed into the input box)
+        userList.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting() && !updatingSelection && userList.getSelectedValue() != null)
+                setTarget("USER", userList.getSelectedValue());
         });
-        groupList.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2 && groupList.getSelectedValue() != null)
-                    prefill("/g " + groupList.getSelectedValue() + " ");
-            }
+        groupList.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting() && !updatingSelection && groupList.getSelectedValue() != null)
+                setTarget("GROUP", groupList.getSelectedValue());
         });
 
         JPanel lists = new JPanel(new GridLayout(2, 1, 0, 10));
@@ -232,12 +242,19 @@ public class ChatGUI extends JFrame {
             if (n != null && !n.trim().isEmpty()) { out.println("/group create " + n.trim()); requestRefresh(); }
         });
         joinG.addActionListener(e -> {
-            String g = pickGroup("Group to join:");
+            List<String> joinable = new ArrayList<>(allGroups);
+            for (int i = 0; i < groupModel.size(); i++) joinable.remove(groupModel.get(i));
+            if (joinable.isEmpty()) { info("There is no other group to join. Use \"New group\" to create one."); return; }
+            Object g = JOptionPane.showInputDialog(this, "Group to join:", "Join group",
+                    JOptionPane.PLAIN_MESSAGE, null, joinable.toArray(), joinable.get(0));
             if (g != null) { out.println("/group join " + g); requestRefresh(); }
         });
         leaveG.addActionListener(e -> {
-            String g = pickGroup("Group to leave:");
-            if (g != null) { out.println("/group leave " + g); requestRefresh(); }
+            String g = groupList.getSelectedValue();
+            if (g == null) { info("Click one of your groups first, then press Leave."); return; }
+            out.println("/group leave " + g);
+            if (targetType.equals("GROUP") && g.equals(targetName)) setTarget("ALL", null);
+            requestRefresh();
         });
         hist.addActionListener(e -> openHistory());
 
@@ -258,7 +275,7 @@ public class ChatGUI extends JFrame {
         bottom.setOpaque(false);
         bottom.add(input, BorderLayout.CENTER);
         bottom.add(sendBtn, BorderLayout.EAST);
-        JLabel hint = new JLabel("Enter sends | /help for commands | Double-click a person or group to message");
+        JLabel hint = new JLabel("Enter sends  |  Click a person or group to choose who you message  |  /help for commands");
         hint.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         hint.setForeground(MUTED);
         JPanel footer = new JPanel(new BorderLayout(0, 8));
@@ -292,10 +309,8 @@ public class ChatGUI extends JFrame {
         header.add(statusLabel, BorderLayout.EAST);
         header.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
 
-        JLabel conversationName = new JLabel("Everyone");
         conversationName.setFont(new Font("Segoe UI", Font.BOLD, 14));
         conversationName.setForeground(TEXT);
-        JLabel conversationDetail = new JLabel("Public conversation");
         conversationDetail.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         conversationDetail.setForeground(MUTED);
         JPanel conversationTitle = new JPanel();
@@ -307,6 +322,11 @@ public class ChatGUI extends JFrame {
         JPanel conversationHeader = new JPanel(new BorderLayout());
         conversationHeader.setBackground(SURFACE);
         conversationHeader.add(conversationTitle, BorderLayout.WEST);
+        JButton everyoneBtn = new JButton("Everyone");
+        styleButton(everyoneBtn, false);
+        everyoneBtn.setToolTipText("Go back to the public chat");
+        everyoneBtn.addActionListener(e -> setTarget("ALL", null));
+        conversationHeader.add(everyoneBtn, BorderLayout.EAST);
         conversationHeader.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
                 BorderFactory.createEmptyBorder(10, 16, 10, 16)));
@@ -363,20 +383,34 @@ public class ChatGUI extends JFrame {
     }
 
     private void sendInput() {
+        long t0 = Prof.start();
+        try { sendInput0(); } finally { Prof.end("sendInput", t0); }
+    }
+    private void sendInput0() {
         String text = input.getText().trim();
         if (text.isEmpty()) return;
         if (out == null || socket == null || socket.isClosed()) {
             onDisconnected("Not connected to the server.");
             return;
         }
-        out.println(text);      // the server echoes our own messages back, so no local echo
+        String cmd = text;
+        if (!text.startsWith("/")) {                       // plain text: add the command for the chosen target
+            if (targetType.equals("USER"))       cmd = "/msg " + targetName + " " + text;
+            else if (targetType.equals("GROUP")) cmd = "/g " + targetName + " " + text;
+        }
+        out.println(cmd);       // the server echoes our own messages back, so no local echo
         input.setText("");
     }
 
     /** Asks the server for the user and group lists (replies are intercepted in handleLine). */
     private void requestRefresh() {
+        long t0 = Prof.start();
+        try { requestRefresh0(); } finally { Prof.end("requestRefresh", t0); }
+    }
+    private void requestRefresh0() {
         if (out != null) {
             out.println("/users");
+            out.println("/group mine");
             out.println("/group list");
         }
     }
@@ -384,6 +418,10 @@ public class ChatGUI extends JFrame {
     // -------------------------------------------------------- handling output
 
     private void handleLine(String line) {
+        long t0 = Prof.start();
+        try { handleLine0(line); } finally { Prof.end("handleLine", t0); }
+    }
+    private void handleLine0(String line) {
         if (historyRequestPending && line.startsWith("--- last ") && line.endsWith(" messages ---")) {
             collectingHistory = true;
             historyLines.clear();
@@ -400,12 +438,17 @@ public class ChatGUI extends JFrame {
             return;
         }
         if (line.startsWith("Online: ")) { updateList(userModel, line.substring(8)); return; }
-        if (line.startsWith("Groups: ")) { updateList(groupModel, line.substring(8)); return; }
+        if (line.startsWith("Mine: ")) { updateList(groupModel, line.substring(6)); return; }
+        if (line.startsWith("Groups: ")) { updateAllGroups(line.substring(8)); return; }
         if (line.startsWith("* ")) requestRefresh();   // someone joined/left: refresh sidebar
         append(line, colorFor(line));
     }
 
     private void updateList(DefaultListModel<String> model, String csv) {
+        long t0 = Prof.start();
+        try { updateList0(model, csv); } finally { Prof.end("updateList", t0); }
+    }
+    private void updateList0(DefaultListModel<String> model, String csv) {
         java.util.List<String> items = new java.util.ArrayList<>();
         if (!csv.equals("(none)"))
             for (String s : csv.split(",\\s*")) if (!s.isEmpty()) items.add(s);
@@ -414,10 +457,25 @@ public class ChatGUI extends JFrame {
         for (int i = 0; same && i < items.size(); i++) same = items.get(i).equals(model.get(i));
         if (same) return;
 
+        updatingSelection = true;                          // rebuilding the list must not change the target
         model.clear();
         for (String s : items) model.addElement(s);
+        JList<String> list = (model == userModel) ? userList : groupList;
+        String wanted = targetType.equals(model == userModel ? "USER" : "GROUP") ? targetName : null;
+        if (wanted != null && items.contains(wanted)) list.setSelectedValue(wanted, true);
+        updatingSelection = false;
         statusLabel.setText("Connected as " + username + "  |  Online users: "
                 + userModel.size() + "  |  Groups: " + groupModel.size());
+    }
+
+    private void updateAllGroups(String csv) {
+        long t0 = Prof.start();
+        try { updateAllGroups0(csv); } finally { Prof.end("updateAllGroups", t0); }
+    }
+    private void updateAllGroups0(String csv) {
+        allGroups.clear();
+        if (!csv.equals("(none)"))
+            for (String s : csv.split(",\\s*")) if (!s.isEmpty()) allGroups.add(s);
     }
 
     private Color colorFor(String line) {
@@ -434,6 +492,10 @@ public class ChatGUI extends JFrame {
     }
 
     private void appendMessage(JPanel target, JScrollPane scroll, String line, Color color) {
+        long t0 = Prof.start();
+        try { appendMessage0(target, scroll, line, color); } finally { Prof.end("appendMessage", t0); }
+    }
+    private void appendMessage0(JPanel target, JScrollPane scroll, String line, Color color) {
         JPanel row = new JPanel(new BorderLayout());
         row.setOpaque(false);
         row.setBorder(BorderFactory.createEmptyBorder(3, 8, 3, 8));
@@ -513,6 +575,10 @@ public class ChatGUI extends JFrame {
     }
 
     private MessageDetails parseMessage(String line) {
+        long t0 = Prof.start();
+        try { return parseMessage0(line); } finally { Prof.end("parseMessage", t0); }
+    }
+    private MessageDetails parseMessage0(String line) {
         if (!line.startsWith("[")) return null;
         int timestampEnd = line.indexOf("] ");
         if (timestampEnd < 0) return null;
@@ -567,6 +633,10 @@ public class ChatGUI extends JFrame {
     }
 
     private void openHistory() {
+        long t0 = Prof.start();
+        try { openHistory0(); } finally { Prof.end("openHistory", t0); }
+    }
+    private void openHistory0() {
         if (historyDialog == null) createHistoryDialog();
         historyDialog.setVisible(true);
         historyDialog.toFront();
@@ -620,6 +690,10 @@ public class ChatGUI extends JFrame {
     }
 
     private void showHistoryMessages() {
+        long t0 = Prof.start();
+        try { showHistoryMessages0(); } finally { Prof.end("showHistoryMessages", t0); }
+    }
+    private void showHistoryMessages0() {
         historyMessages.removeAll();
         if (historyLines.isEmpty()) {
             setHistoryPlaceholder("No messages in your history yet.");
@@ -706,22 +780,40 @@ public class ChatGUI extends JFrame {
 
     // ---------------------------------------------------------------- helpers
 
-    private void prefill(String text) {
-        input.setText(text);
-        input.requestFocusInWindow();
-        input.setCaretPosition(text.length());
+    /** Chooses who the next messages go to and shows it in the conversation header. */
+    private void setTarget(String type, String name) {
+        long t0 = Prof.start();
+        try { setTarget0(type, name); } finally { Prof.end("setTarget", t0); }
     }
-
-    /** Uses the selected group in the sidebar, or asks for a name. */
-    private String pickGroup(String prompt) {
-        String sel = groupList.getSelectedValue();
-        if (sel != null) return sel;
-        String n = JOptionPane.showInputDialog(this, prompt);
-        return (n == null || n.trim().isEmpty()) ? null : n.trim();
+    private void setTarget0(String type, String name) {
+        targetType = type;
+        targetName = name;
+        updatingSelection = true;
+        if (!type.equals("USER"))  userList.clearSelection();
+        if (!type.equals("GROUP")) groupList.clearSelection();
+        updatingSelection = false;
+        switch (type) {
+            case "USER":
+                conversationName.setText(name);
+                conversationDetail.setText("Private conversation - only " + name + " and you see these messages");
+                break;
+            case "GROUP":
+                conversationName.setText(name);
+                conversationDetail.setText("Group conversation - all members see these messages");
+                break;
+            default:
+                conversationName.setText("Everyone");
+                conversationDetail.setText("Public conversation");
+        }
+        input.requestFocusInWindow();
     }
 
     private void error(String msg) {
-        JOptionPane.showMessageDialog(null, msg, "Error", JOptionPane.ERROR_MESSAGE);
+        JOptionPane.showMessageDialog(isShowing() ? this : null, msg, "Error", JOptionPane.ERROR_MESSAGE);
+    }
+
+    private void info(String msg) {
+        JOptionPane.showMessageDialog(this, msg, "Chat", JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void closeQuietly() {

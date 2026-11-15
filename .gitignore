@@ -1,24 +1,27 @@
-# Java compiled output
+# Compiled classes
 *.class
-
-# Build output
 /bin/
-/out/
-/target/
+/bin_before/
 
-# Server runtime data (users.txt has password hashes, history.log may contain private messages)
+# Server runtime data (password hashes, private messages)
 /data/
-/users.txt
-/history.log
-/groups.txt
-/groups.txt.tmp
-/server.log*
+/testdata/
 
-# IDE files
+# Profiler recordings (large); the text results in docs/profiling/results are kept
+*.jfr
+
+# LaTeX build files
+*.aux
+*.log
+*.out
+*.toc
+*.nav
+*.snm
+*.vrb
+
+# IDE / OS files
 .idea/
 .vscode/
 *.iml
-
-# Operating system files
 .DS_Store
 Thumbs.db

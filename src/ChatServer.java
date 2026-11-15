@@ -16,9 +16,11 @@ import javax.crypto.spec.PBEKeySpec;
 public class ChatServer {
     static final Logger LOG = Logger.getLogger("ChatServer");
     static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    static final Path USERS_FILE = Paths.get("users.txt");
-    static final Path HISTORY_FILE = Paths.get("history.log");
-    static final Path GROUPS_FILE = Paths.get("groups.txt");
+    /** Folder for users.txt, history.log, groups.txt and server.log (default ./data, override: -Ddata.dir=path). */
+    static final Path DATA_DIR = Paths.get(System.getProperty("data.dir", "data"));
+    static final Path USERS_FILE = DATA_DIR.resolve("users.txt");
+    static final Path HISTORY_FILE = DATA_DIR.resolve("history.log");
+    static final Path GROUPS_FILE = DATA_DIR.resolve("groups.txt");
     private static final int PASSWORD_ITERATIONS = 210_000;
     private static final int PASSWORD_SALT_BYTES = 16;
     private static final int PASSWORD_HASH_BYTES = 32;
@@ -30,6 +32,11 @@ public class ChatServer {
     private final Map<String, Set<String>> groups = new ConcurrentHashMap<>();    // group -> members
     private final List<Message> history = Collections.synchronizedList(new ArrayList<>());
     private final ExecutorService pool = Executors.newCachedThreadPool();
+
+    // History is written to disk by one background thread, so chat threads never wait for file I/O.
+    private static final String STOP = new String("<stop>");          // marker: flush everything and finish
+    private final BlockingQueue<String> historyQueue = new LinkedBlockingQueue<>();
+    private Thread historyWriter;
 
     /** One stored chat message. type = ALL | PRIVATE | GROUP */
     static class Message {
@@ -49,13 +56,14 @@ public class ChatServer {
 
     public static void main(String[] args) throws Exception {
         int port = args.length > 0 ? Integer.parseInt(args[0]) : 5000;
+        Files.createDirectories(DATA_DIR);
         setupLogging();
         new ChatServer().start(port);
     }
 
     static void setupLogging() throws IOException {
         LOG.setUseParentHandlers(false);
-        FileHandler fh = new FileHandler("server.log", true);
+        FileHandler fh = new FileHandler(DATA_DIR.resolve("server.log").toString(), true);
         fh.setFormatter(new SimpleFormatter() {
             @Override public String format(LogRecord r) {
                 return "[" + LocalDateTime.now().format(TS) + "] " + r.getLevel() + ": " + r.getMessage() + "\n";
@@ -71,14 +79,29 @@ public class ChatServer {
         loadUsers();
         loadGroups();
         loadHistory();
+        startHistoryWriter();
         try (ServerSocket ss = new ServerSocket(port)) {
-            LOG.info("Server started on port " + port);
+            LOG.info("Server started on port " + port + " (data folder: " + DATA_DIR.toAbsolutePath() + ")");
+            LOG.info("Clients on other PCs connect to: " + lanAddresses() + " port " + port);
             while (true) {
                 Socket s = ss.accept();
                 LOG.info("Connection from " + s.getRemoteSocketAddress());
                 pool.execute(new ClientHandler(s));
             }
         }
+    }
+
+    /** Non-loopback IPv4 addresses of this machine, e.g. "192.168.1.5". */
+    static String lanAddresses() {
+        List<String> found = new ArrayList<>();
+        try {
+            for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback()) continue;
+                for (InetAddress a : Collections.list(ni.getInetAddresses()))
+                    if (a instanceof Inet4Address) found.add(a.getHostAddress());
+            }
+        } catch (SocketException ignored) { }
+        return found.isEmpty() ? "(no network found - use localhost)" : String.join(" or ", found);
     }
 
     // ---------- persistence ----------
@@ -93,7 +116,11 @@ public class ChatServer {
         } catch (IOException e) { LOG.warning("Could not load users: " + e.getMessage()); }
     }
 
-    synchronized void saveUser(String name, String hash) {
+    void saveUser(String name, String hash) {
+        long t0 = Prof.start();
+        try { saveUser0(name, hash); } finally { Prof.end("saveUser", t0); }
+    }
+    synchronized void saveUser0(String name, String hash) {
         try {
             Files.write(USERS_FILE, (name + ":" + hash + "\n").getBytes(StandardCharsets.UTF_8),
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
@@ -124,7 +151,11 @@ public class ChatServer {
         }
     }
 
-    synchronized void saveGroups() throws IOException {
+    void saveGroups() throws IOException {
+        long t0 = Prof.start();
+        try { saveGroups0(); } finally { Prof.end("saveGroups", t0); }
+    }
+    synchronized void saveGroups0() throws IOException {
         List<String> lines = new ArrayList<>();
         for (String group : new TreeSet<>(groups.keySet())) {
             Set<String> members = groups.get(group);
@@ -161,15 +192,53 @@ public class ChatServer {
         } catch (IOException e) { LOG.warning("Could not load history: " + e.getMessage()); }
     }
 
-    synchronized void storeMessage(Message m) {
-        history.add(m);
-        try {
-            Files.write(HISTORY_FILE, (m.serialize() + "\n").getBytes(StandardCharsets.UTF_8),
-                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (IOException e) { LOG.warning("Could not save history: " + e.getMessage()); }
+    /** Keeps the message in memory and queues it for the writer thread (no file I/O, no server-wide lock). */
+    void storeMessage(Message m) {
+        long t0 = Prof.start();
+        try { storeMessage0(m); } finally { Prof.end("storeMessage", t0); }
+    }
+    void storeMessage0(Message m) {
+        synchronized (history) {   // one lock for both, so memory and file keep the same message order
+            history.add(m);
+            historyQueue.add(m.serialize());
+        }
+    }
+
+    /** Starts the thread that appends queued messages to history.log in batches; a shutdown hook flushes the rest. */
+    void startHistoryWriter() {
+        historyWriter = new Thread(() -> {
+            try (BufferedWriter w = Files.newBufferedWriter(HISTORY_FILE, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+                List<String> batch = new ArrayList<>();
+                boolean running = true;
+                while (running) {
+                    batch.add(historyQueue.take());          // wait for work, then grab everything queued
+                    historyQueue.drainTo(batch);
+                    for (String line : batch) {
+                        if (line == STOP) { running = false; continue; }
+                        w.write(line);
+                        w.write('\n');
+                    }
+                    w.flush();
+                    batch.clear();
+                }
+            } catch (IOException e) {
+                LOG.warning("Could not save history: " + e.getMessage());
+            } catch (InterruptedException ignored) { }
+        }, "history-writer");
+        historyWriter.setDaemon(true);
+        historyWriter.start();
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {   // Ctrl+C / kill: write what is still queued
+            historyQueue.add(STOP);
+            try { historyWriter.join(5000); } catch (InterruptedException ignored) { }
+        }));
     }
 
     static String hashPassword(String password) {
+        long t0 = Prof.start();
+        try { return hashPassword0(password); } finally { Prof.end("hashPassword", t0); }
+    }
+    static String hashPassword0(String password) {
         byte[] salt = new byte[PASSWORD_SALT_BYTES];
         SECURE_RANDOM.nextBytes(salt);
         byte[] hash = derivePasswordHash(password.toCharArray(), salt, PASSWORD_ITERATIONS);
@@ -179,6 +248,10 @@ public class ChatServer {
     }
 
     static boolean verifyPassword(String password, String stored) {
+        long t0 = Prof.start();
+        try { return verifyPassword0(password, stored); } finally { Prof.end("verifyPassword", t0); }
+    }
+    static boolean verifyPassword0(String password, String stored) {
         if (stored.startsWith("pbkdf2$")) {
             String[] parts = stored.split("\\$", -1);
             if (parts.length != 4) return false;
@@ -234,15 +307,57 @@ public class ChatServer {
         private BufferedReader in;
         private PrintWriter out;
         private String username;
+        private volatile boolean echo = true;   // false: do not send a user's own messages back to them (/echo off)
+
+        // Outgoing lines wait in this queue; one writer thread per client sends them, many lines per network write.
+        // Chat threads therefore never block on a slow client's socket.
+        private static final int OUTBOX_LIMIT = 10_000;
+        private final String close = new String("<close>");                 // marker: send what is queued, then stop
+        private final BlockingQueue<String> outbox = new LinkedBlockingQueue<>(OUTBOX_LIMIT);
+        private final CountDownLatch writerDone = new CountDownLatch(1);
+        private boolean dropped = false;                                // guarded by synchronized send()
 
         ClientHandler(Socket s) { this.socket = s; }
 
-        synchronized void send(String msg) { if (out != null) out.println(msg); }
+        /** Queues a line for this client (holds the lock only for the queue insert, never for I/O). */
+        void send(String msg) {
+            long t0 = Prof.start();
+            try { send0(msg); } finally { Prof.end("send", t0); }
+        }
+        synchronized void send0(String msg) {
+            if (!outbox.offer(msg) && !dropped) {   // client has stopped reading: drop it instead of slowing everybody down
+                dropped = true;
+                LOG.warning("Outgoing queue full, disconnecting " + (username == null ? "client" : username));
+                try { socket.close(); } catch (IOException ignored) { }
+            }
+        }
+
+        private void writeLoop() {
+            List<String> batch = new ArrayList<>();
+            try {
+                boolean open = true;
+                while (open) {
+                    batch.add(outbox.take());          // wait for a line, then take everything that is queued
+                    outbox.drainTo(batch);
+                    for (String m : batch) {
+                        if (m == close) { open = false; break; }
+                        out.println(m);
+                    }
+                    batch.clear();
+                    out.flush();                       // one flush for the whole batch
+                    if (out.checkError()) break;       // client is gone
+                }
+            } catch (InterruptedException ignored) {
+            } finally {
+                writerDone.countDown();
+            }
+        }
 
         @Override public void run() {
             try {
                 in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
-                out = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), true);
+                out = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), false);
+                pool.execute(this::writeLoop);
                 if (!authenticate()) return;
                 send("Type /help for commands.");
                 broadcastSystem(username + " joined the chat.");
@@ -261,6 +376,9 @@ public class ChatServer {
         }
 
         private boolean authenticate() throws IOException {
+            return authenticate0();   // not timed: it includes waiting for the user to type
+        }
+        private boolean authenticate0() throws IOException {
             send("Welcome! Use: LOGIN <user> <pass>  or  REGISTER <user> <pass>");
             String line;
             while ((line = in.readLine()) != null) {
@@ -268,17 +386,22 @@ public class ChatServer {
                 if (p.length != 3) { send("ERR Usage: LOGIN|REGISTER <user> <pass>"); continue; }
                 String cmd = p[0].toUpperCase(), name = p[1], pw = p[2];
                 boolean justRegistered = false;
+                long tAuth = Prof.start();
                 if (cmd.equals("REGISTER")) {
                     if (!name.matches("[A-Za-z0-9_]{3,16}")) { send("ERR Username must be 3-16 letters/digits/_"); continue; }
+                    if (users.containsKey(name)) { send("ERR Username already taken"); continue; }   // cheap check first: hashing is slow
                     if (users.putIfAbsent(name, hashPassword(pw)) != null) { send("ERR Username already taken"); continue; }
                     saveUser(name, users.get(name));
+                    Prof.end("register", tAuth);
                     LOG.info("Registered new user: " + name);
                     justRegistered = true;
                     cmd = "LOGIN";
                 }
                 if (cmd.equals("LOGIN")) {
                     String h = users.get(name);
-                    if (h == null || (!justRegistered && !verifyPassword(pw, h))) {
+                    boolean bad = h == null || (!justRegistered && !verifyPassword(pw, h));
+                    if (!justRegistered) Prof.end("login", tAuth);
+                    if (bad) {
                         LOG.warning("Failed login for '" + name + "'");
                         send("ERR Invalid username or password");
                         continue;
@@ -287,11 +410,13 @@ public class ChatServer {
                         String upgraded = hashPassword(pw);
                         if (users.replace(name, h, upgraded)) saveUser(name, upgraded);
                     }
-                    if (online.putIfAbsent(name, this) != null) { send("ERR Already logged in elsewhere"); continue; }
-                    username = name;
-                    LOG.info("User logged in: " + name);
-                    send("OK Logged in as " + name);
-                    return true;
+                    synchronized (this) {   // broadcasts to us wait here, so "OK" is always the first line we get
+                        if (online.putIfAbsent(name, this) != null) { send("ERR Already logged in elsewhere"); continue; }
+                        username = name;
+                        LOG.info("User logged in: " + name);
+                        send("OK Logged in as " + name);
+                        return true;
+                    }
                 }
                 send("ERR Unknown command");
             }
@@ -300,6 +425,16 @@ public class ChatServer {
 
         /** @return false if the client wants to disconnect */
         private boolean handleCommand(String line) {
+            long t0 = Prof.start();
+            try { return handleCommand0(line); } finally { Prof.end("cmd " + cmdLabel(line), t0); }
+        }
+        /** Profiler label: "/msg", "/users", "/group join", ... */
+        private String cmdLabel(String line) {
+            String[] p = line.trim().split("\\s+");
+            String c = p[0].toLowerCase();
+            return c.equals("/group") && p.length > 1 ? c + " " + p[1].toLowerCase() : c;
+        }
+        private boolean handleCommand0(String line) {
             String[] p = line.split("\\s+", 3);
             switch (p[0].toLowerCase()) {
                 case "/help": sendHelp(); break;
@@ -312,17 +447,27 @@ public class ChatServer {
                     handleGroupMessage(line); break;
                 case "/group": handleGroup(line); break;
                 case "/history": sendHistory(p.length > 1 ? p[1] : "20"); break;
+                case "/echo": echo = !(p.length > 1 && p[1].equalsIgnoreCase("off")); break;   // used by console clients
                 default: send("Unknown command. Type /help");
             }
             return true;
         }
 
         private void handleGroup(String line) {
+            handleGroup0(line);
+        }
+        private void handleGroup0(String line) {
             String[] p = line.trim().split("\\s+", 3);
-            if (p.length < 2) { send("Usage: /group create|join|leave|list|members <name>"); return; }
+            if (p.length < 2) { send("Usage: /group create|join|leave|list|mine|members <name>"); return; }
             String sub = p[1].toLowerCase();
             if (sub.equals("list")) {
                 send("Groups: " + (groups.isEmpty() ? "(none)" : String.join(", ", new TreeSet<>(groups.keySet()))));
+                return;
+            }
+            if (sub.equals("mine")) {   // only the groups this user belongs to (used by the GUI)
+                TreeSet<String> mine = new TreeSet<>();
+                for (Map.Entry<String, Set<String>> e : groups.entrySet()) if (e.getValue().contains(username)) mine.add(e.getKey());
+                send("Mine: " + (mine.isEmpty() ? "(none)" : String.join(", ", mine)));
                 return;
             }
             if (p.length < 3) { send("Usage: /group " + sub + " <name>"); return; }
@@ -405,31 +550,46 @@ public class ChatServer {
         }
 
         private void publicMessage(String text) {
+            long t0 = Prof.start();
+            try { publicMessage0(text); } finally { Prof.end("publicMessage", t0); }
+        }
+        private void publicMessage0(String text) {
             Message m = new Message(now(), "ALL", username, "ALL", clean(text));
             storeMessage(m);
             LOG.info("PUBLIC " + username + ": " + m.text);
-            for (ClientHandler h : online.values()) h.send(m.format());
+            for (ClientHandler h : online.values()) if (h != this || echo) h.send(m.format());
         }
 
         private void privateMessage(String to, String text) {
+            long t0 = Prof.start();
+            try { privateMessage0(to, text); } finally { Prof.end("privateMessage", t0); }
+        }
+        private void privateMessage0(String to, String text) {
             if (!users.containsKey(to)) { send("No such user: " + to); return; }
             Message m = new Message(now(), "PRIVATE", username, to, clean(text));
             storeMessage(m);
             LOG.info("PRIVATE " + username + " -> " + to);
-            send(m.format());
+            if (echo) send(m.format());
             ClientHandler h = online.get(to);
             if (h != null && h != this) h.send(m.format());
             else if (h == null) send("(" + to + " is offline; they can see it via /history)");
         }
 
         private void groupMessage(String g, String text) {
+            long t0 = Prof.start();
+            try { groupMessage0(g, text); } finally { Prof.end("groupMessage", t0); }
+        }
+        private void groupMessage0(String g, String text) {
             Set<String> members = groups.get(g);
             if (members == null) { send("No such group"); return; }
             if (!members.contains(username)) { send("Join the group first: /group join " + g); return; }
             Message m = new Message(now(), "GROUP", username, g, clean(text));
             storeMessage(m);
             LOG.info("GROUP[" + g + "] " + username);
-            for (String u : members) { ClientHandler h = online.get(u); if (h != null) h.send(m.format()); }
+            for (String u : members) {
+                ClientHandler h = online.get(u);
+                if (h != null && (h != this || echo)) h.send(m.format());
+            }
         }
 
         private void sendToGroup(String g, String text) {
@@ -439,6 +599,10 @@ public class ChatServer {
         }
 
         private void sendHistory(String arg) {
+            long t0 = Prof.start();
+            try { sendHistory0(arg); } finally { Prof.end("sendHistory", t0); }
+        }
+        private void sendHistory0(String arg) {
             int n;
             try { n = Math.max(1, Math.min(200, Integer.parseInt(arg))); }
             catch (NumberFormatException e) { send("Usage: /history [n] (1-200)"); return; }
@@ -451,7 +615,7 @@ public class ChatServer {
                     if (ok) visible.add(m.format());
                 }
             }
-            synchronized (this) {
+            synchronized (this) {   // keep the history block together in this client's outgoing queue
                 send("--- last " + Math.min(n, visible.size()) + " messages ---");
                 for (String s : visible.subList(Math.max(0, visible.size() - n), visible.size())) send(s);
                 send("--- end of history ---");
@@ -464,7 +628,8 @@ public class ChatServer {
                + "  /msg <user> <text>          private message\n"
                + "  /g <group> <text>           group message\n"
                + "  /group create|join|leave|members <name>\n"
-               + "  /group list                 list groups\n"
+               + "  /group list                 list all groups\n"
+               + "  /group mine                 list your groups\n"
                + "  /users                      who is online\n"
                + "  /history [n]                last n messages (default 20)\n"
                + "  /quit                       disconnect");
@@ -481,6 +646,8 @@ public class ChatServer {
                 LOG.info("User disconnected: " + username);
                 broadcastSystem(username + " left the chat.");
             }
+            outbox.offer(close);                                  // let the writer send the last lines (e.g. "Goodbye!")
+            try { writerDone.await(2, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
             try { socket.close(); } catch (IOException ignored) { }
         }
     }
