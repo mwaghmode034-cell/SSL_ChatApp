@@ -3,9 +3,10 @@
 Project 9 - IIT Dharwad. A TCP chat server with a console client and a Swing GUI client.
 Public chat, private messages, groups, message history, hashed passwords, and a profiling tool.
 
-<<<<<<< HEAD
+## Repository
+[GitHub repository](https://github.com/mwaghmode034-cell/SSL_ChatApp)
+
 ## Folder structure
-=======
 
 ```
 README.md  sources.txt  .gitignore  .gitattributes
