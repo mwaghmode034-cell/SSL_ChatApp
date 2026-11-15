@@ -1,0 +1,28 @@
+74954ab Initial chat prototype
+162c208 Adding the ChatGUI file (Rajiv)
+3da9a87 updating gitignore
+cad4e2b Add initial HTML structure for chat application
+e132b62 improve the security behind the password ,now password are stored as PBKDF2-HMAC-SHA256 hashed from SHA-256 hashes
+fe586c6 fix the issue regarding console which not closed
+eba9558 improved the GUI -login screen,chat view,online users and clear connection/error messages also add the feature to store the groups , initially it's not storing the groups
+a2ebd89 improve the reademe file
+fd5dbf2 Group Chat Modification
+37ac04e Fix group persistence: allow spaces in group names when loading groups.txt
+a0c848a Add functional tests for auth, messaging, groups, concurrency and persistence
+636140b Add bash scripts to build, run and test the project
+4c6d757 Update README with scripts, testing instructions and Windows alternatives
+b7fd7bf (origin/feature/tests-and-automation) Ignore data/ directory used for server runtime files
+5dd2bef Merge feature/tests-and-automation: add tests, automation scripts and docs
+aaf98b0 Implement WebBridge HTTP server for ChatServer
+b851dc7 (origin/RajivxDev369-patch-1) Refactor styles and layout in index.html
+815535b upgrade the ui of CHATGUI and make it simpler for user
+3930f58 (origin/chatgui_upgrade) Improve chat UI and history
+c603df6 (origin/feature/divya) Show usage error for invalid history count
+780adf5 Merge pull request #2 from mwaghmode034-cell/feature/divya
+7713b36 (origin/feature/login-security) security: close connections after five failed logins
+642fbce Merge pull request #3 from mwaghmode034-cell/feature/login-security
+6a4e1ba Added report, profiling and PPT
+2aba4d5 Added report, profiling and PPT
+44337a2 Upload PPT
+a864b69 Update PPT
+6c36891 (HEAD -> main, origin/main, origin/HEAD) Update README and PPT
