@@ -25,3 +25,6 @@
 *.iml
 .DS_Store
 Thumbs.db
+/users.txt
+/server.log.lck
+/groups.txt
