@@ -24,7 +24,7 @@ public class ChatServer {
     private static final int PASSWORD_ITERATIONS = 210_000;
     private static final int PASSWORD_SALT_BYTES = 16;
     private static final int PASSWORD_HASH_BYTES = 32;
-    private static final int MAX_FAILED_LOGIN_ATTEMPTS = 5;
+    private static final int MAX_FAILED_LOGINS = 5;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     // Shared state (thread-safe collections)
@@ -382,6 +382,7 @@ public class ChatServer {
         private boolean authenticate0() throws IOException {
             send("Welcome! Use: LOGIN <user> <pass>  or  REGISTER <user> <pass>");
             String line;
+            int failures = 0;   // failed logins on this connection; MAX_FAILED_LOGINS in a row close it
             while ((line = in.readLine()) != null) {
                 String[] p = line.trim().split("\\s+");
                 if (p.length != 3) { send("ERR Usage: LOGIN|REGISTER <user> <pass>"); continue; }
@@ -404,12 +405,12 @@ public class ChatServer {
                     if (!justRegistered) Prof.end("login", tAuth);
                     if (bad) {
                         LOG.warning("Failed login for '" + name + "'");
-                        failedLoginAttempts++;
-                        if (failedLoginAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
-                            send("ERR Too many failed authentication attempts; reconnect to try again");
+                        send("ERR Invalid username or password");
+                        if (++failures >= MAX_FAILED_LOGINS) {
+                            LOG.warning("Closing connection after " + failures + " failed logins");
+                            send("ERR Too many failed logins. Disconnected.");
                             return false;
                         }
-                        send("ERR Invalid username or password");
                         continue;
                     }
                     if (isLegacyPasswordHash(h)) {

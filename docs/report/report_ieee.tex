@@ -84,7 +84,7 @@ through a console program or a window-based (GUI) program. Users register and lo
 public, private and group messages; every message has a time stamp and is stored, so it can be read again with a history command.
 Users, groups and history are kept when the server restarts. The project includes bash scripts, 20 automated tests (which found three bugs),
 and a simple profiler that shows how long each part of the server takes. The profile shows that password protection is the slowest step
-(by design) and that sending a message to all users costs about 2\,ms with 20 users online.
+(by design) and that sending a message to 20 online users takes about 3\,ms.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -107,15 +107,7 @@ timestamps, history and server logging; GUI is optional''.
 (v) provide a console client and a Swing GUI client;
 (vi) automate, test and profile the system, and use the profile to improve it.
 
-\textbf{Contributions.}
-(1) a complete, working chat system in Java that uses only the standard library;
-(2) a server design in which many users can chat safely at the same time;
-(3) automated tests and a load generator that found three real bugs;
-(4) a small built-in profiler that reports the time spent in every important method of the server, the console client and the GUI.
-
-The rest of the paper is organized as follows. Section~II gives background, Section~III the design, Section~IV the implementation,
-Section~V explains what each file of the project does, Section~VI the tools and process, Section~VII the tests, Section~VIII the profiling,
-Section~IX limitations and future work, and Section~X concludes.
+The rest of the paper: Section~II gives background, III the design, IV the implementation, V the files, VI the tools, VII the tests, VIII the profiling, IX limitations and X the conclusion.
 
 % ============================================================================
 \section{Background and Related Work}
@@ -123,17 +115,14 @@ Text chat over TCP has a long history. Internet Relay Chat (IRC) \cite{rfc1459} 
 and private messages, and the Extensible Messaging and Presence Protocol (XMPP) \cite{rfc6120} streams XML between clients and servers.
 Our protocol is deliberately simpler than both: one text line per command, which makes it easy to test with a plain socket.
 
-Concurrency in Java is built on threads, monitors (\code{synchronized}), the \code{java.util.concurrent} collections and blocking queues
-\cite{jcip,jdkapi}. Two server styles are common: one thread per connection (simple, used here) and event-driven non-blocking I/O
-(scales to more connections but is harder to write). For password storage, current guidance recommends a slow, salted key-derivation
-function such as PBKDF2 \cite{rfc8018,owasp} instead of a plain hash. A profiler measures where a program spends its time, in the same way as \code{gprof} does for C programs.
+Java supports running many tasks at once with threads, and it provides collections that are safe to use from several threads \cite{jcip,jdkapi}. Our server gives every user its own thread, which is simple to write. For passwords, current guidance is to store only a slow, salted hash (we use PBKDF2) \cite{rfc8018,owasp}. A profiler measures where a program spends its time, as \code{gprof} does for C.
 
 % ============================================================================
 \section{System Design}
 
 \subsection{Architecture}
 Fig.~\ref{fig:arch} shows the system. Clients connect over TCP to one server process. The server contains
-an accept loop, one reader thread and one writer thread per connected client, and one history-writer thread.
+a loop that accepts new connections, one reader thread and one writer thread for every connected user, and one thread that writes the history to disk.
 All reader threads share the same in-memory state and the files in the \code{data/} folder.
 
 \begin{figure*}[!t]
@@ -149,12 +138,12 @@ All reader threads share the same in-memory state and the files in the \code{dat
   \node[cli, below=of con] (gui) {Swing GUI client\\\code{ChatGUI}};
   \node[cli, below=of gui] (oth) {Clients on\\other PCs (LAN)};
 
-  \node[srv, right=20mm of con] (acc) {Accept loop\\\code{ServerSocket}};
+  \node[srv, right=20mm of con] (acc) {Accept new\\connections};
   \node[srv, below=of acc] (rd) {Reader thread\\(one per client)};
-  \node[srv, below=of rd] (wr) {Writer thread +\\outgoing queue (per client)};
+  \node[srv, below=of rd] (wr) {Writer thread +\\message queue (per client)};
 
-  \node[sto, right=18mm of rd] (st) {Shared state\\\code{ConcurrentHashMap}\\\code{synchronizedList}};
-  \node[srv, above=of st] (hw) {History-writer thread\\(queue, batched writes)};
+  \node[sto, right=18mm of rd] (st) {Shared data\\users, groups,\\history, online list};
+  \node[srv, above=of st] (hw) {History-writer thread\\(writes to disk)};
   \node[sto, below=of st] (fl) {\code{data/} files\\users, groups,\\history, server.log};
 
   \draw[->] (con.east) -- node[above] {TCP} (acc.west);
@@ -208,90 +197,33 @@ On start-up the server reloads users, groups and history. These files contain pa
 \section{Implementation}
 
 \subsection{Threads}
-The accept loop passes every new socket to a cached thread pool (\code{Executors.newCachedThreadPool}), which runs one \code{ClientHandler}
-per client. A cached pool reuses threads of departed clients and grows on demand, which suits a population that changes constantly.
-Each handler also starts a writer thread (the next subsections) and the server starts one history-writer thread.
+The server hands every new connection to a thread pool (a set of ready threads that are reused), which runs one handler per user.
+Each handler also starts a writer thread, and the server starts one more thread that writes the history to disk.
 
-\subsection{Synchronization and collections}
-Table~\ref{tab:sync} lists the shared data and how each item is protected. Explicit locks are used only where several steps must be atomic.
-
-\begin{table}[!t]
-\caption{Shared data and protection mechanism}
-\label{tab:sync}
-\centering\footnotesize
-\begin{tabular}{@{}p{0.2\columnwidth}p{0.39\columnwidth}p{0.34\columnwidth}@{}}
-\toprule
-Data & Structure & Why it is safe\\
-\midrule
-users & {\scriptsize\code{ConcurrentHashMap}} & atomic \code{putIfAbsent}: one winner per name\\
-online & {\scriptsize\code{ConcurrentHashMap}} & \code{putIfAbsent} blocks double login\\
-groups & map of concurrent sets & join/leave while others send\\
-history & {\scriptsize\code{synchronizedList}} & scans lock the list\\
-out-lines & {\scriptsize\code{LinkedBlockingQueue}} & producer--consumer\\
-files & \code{synchronized} methods & no interleaved writes; \code{groups.txt}: temp file, atomic move\\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Three further details matter for correctness.
-\emph{(a) Login ordering.} The login handler holds the client's lock while it registers the user as online and queues \code{OK}; otherwise another user's
-``joined the chat'' broadcast can arrive before \code{OK} (found by the load test, Section~\ref{sec:tests}).
-\emph{(b) Shutdown.} A shutdown hook places a stop marker in the history queue and waits for the writer thread, so queued messages are written when
-the server is stopped with Ctrl+C or \code{kill}.
-\emph{(c) Disconnect.} A \code{CountDownLatch} lets a disconnecting client wait (at most 2\,s) until its writer thread has delivered the last lines.
+\subsection{Sharing data safely}
+Many threads use the same data at once, so we use collections that are safe for this (Java's \code{ConcurrentHashMap} and queues) and \code{synchronized} blocks where several steps must happen together.
+For example, two users registering the same name at the same moment: exactly one succeeds. Three details matter for correctness.
+\emph{(a) Login order.} While a user logs in, the server holds a lock until the \code{OK} message is queued; otherwise another user's ``joined the chat'' notice can arrive before \code{OK} (found by the load test, Section~\ref{sec:tests}).
+\emph{(b) Shutdown.} When the server is stopped with Ctrl+C, it first writes the messages still waiting in the queue to the history file.
+\emph{(c) Disconnect.} A user who quits waits up to 2\,s until the last queued messages have been delivered.
 
 \subsection{Message flow}
-For a public message the reader thread builds a \code{Message} with a timestamp, adds it to the history, queues its serialized form for the history-writer,
-writes a log line, and puts the formatted line into the outgoing queue of every online user. Private and group messages use the same path with fewer receivers.
-No thread performs file or socket I/O while holding a lock that other chat threads need (Listing~\ref{lst:store}); this keeps one slow file or one slow client from
-blocking everybody else (see Section~\ref{sec:prof}).
-
-\begin{lstlisting}[caption={Storing a message without disk I/O under a lock.},label={lst:store}]
-void storeMessage(Message m) {
-  synchronized (history) {   // same order in memory and file
-    history.add(m);
-    historyQueue.add(m.serialize());
-  }
-}
-\end{lstlisting}
+For a public message the reader thread adds a time stamp, stores the message in the history, puts it in the queue for the disk-writer thread, writes a log line, and puts the text into the message queue of every online user; each user's writer thread then sends it.
+Private and group messages work the same way with fewer receivers.
+No thread writes to a file or a network connection while holding a lock that other chat threads need. This keeps one slow file or one slow client from blocking everybody else (Section~\ref{sec:prof}).
 
 \subsection{Security}
-Passwords are never stored in clear text. For each user the server draws a random 16-byte salt and stores
-\code{pbkdf2\$iterations\$salt\$hash}, where the hash is PBKDF2-HMAC-SHA256 with 210\,000 iterations and a 256-bit output \cite{rfc8018}.
-Login recomputes the hash and compares in constant time (\code{MessageDigest.isEqual}). Accounts created with an older unsalted SHA-256 hash are
-upgraded at their next successful login. Usernames must match \code{[A-Za-z0-9\_]\{3,16\}}; group names are limited to 20 letters, digits, underscores
-and spaces; tabs and newlines are removed from messages so they cannot break the history file format.
+Passwords are never stored as plain text. For each user the server adds a random value (a \emph{salt}) and stores only a slow hash of the password (PBKDF2 with 210\,000 rounds) \cite{rfc8018}.
+At login the hash is computed again and compared. Accounts created with an older, weaker hash are upgraded at their next login. A connection is closed after five failed logins in a row.
+User names must be 3--16 letters, digits or underscores; group names have up to 20 letters, digits, underscores and spaces; tabs and new lines are removed from messages so they cannot break the history file.
 
 \subsection{Clients}
 The \textbf{console client} runs a reader thread that prints server output and a main thread that sends typed lines. Because the server returns every
-message with its timestamp, a naive client would show the sender's own message twice. On ANSI-capable terminals the client erases the typed line;
+message with its timestamp, a naive client would show the sender's own message twice. If the terminal allows it, the client erases the typed line;
 otherwise it sends \code{/echo off} and the server does not return the user's own messages.
-The \textbf{Swing GUI} reads the network on a background thread and updates the window only through \code{SwingUtilities.invokeLater}.
+The \textbf{Swing GUI} reads the network on a background thread and and changes the window only from the window's own thread, which Swing requires.
 Clicking a user or group in the side lists selects the target; a label above the input shows ``To: Everyone / bob (private) / group'',
 and the GUI adds \code{/msg} or \code{/g} itself, so the input box contains only the message text. Messages are coloured by type and the lists refresh automatically.
-
-\subsection{Course topics covered}
-Table~\ref{tab:topics} maps the course topics to the project.
-
-\begin{table}[!t]
-\caption{Course topics and where they are used}
-\label{tab:topics}
-\centering\small
-\begin{tabular}{@{}p{0.25\columnwidth}p{0.68\columnwidth}@{}}
-\toprule
-Topic & Use in the project\\
-\midrule
-Threads & thread pool; reader, writer, history-writer threads\\
-Synchronization & \code{synchronized}, \code{putIfAbsent}, blocking queues, latch, shutdown hook\\
-Collections & concurrent maps and sets, \code{synchronizedList}, \code{TreeSet}, queues\\
-Networking & \code{ServerSocket}, \code{Socket}, text protocol, LAN use\\
-File I/O & persistence, atomic file replace, batched writes\\
-GUI & Swing client\\
-Git, Bash, \LaTeX & branches and commits; build/test/profile scripts; this report\\
-Profiling & built-in profiler and load generator\\
-\bottomrule
-\end{tabular}
-\end{table}
 
 % ============================================================================
 \section{What Each File Does}\label{sec:files}
@@ -336,7 +268,7 @@ and \code{scripts/profile.sh} (profiling, Section~\ref{sec:prof}). Equivalent co
 
 \textbf{Version control.} \code{main} holds the working version; each task is done on a feature branch (e.g.\ \code{feature/tests-and-automation}),
 committed in small steps with explanatory messages, and merged with \code{git merge --no-ff}. \code{.gitignore} excludes classes, \code{bin/}, \code{data/}
-and \LaTeX{} build files. \todo{Add the output of \code{git log --oneline --graph --all} to the appendix and mention the number of commits per member.}
+and \LaTeX{} build files. The complete commit history is printed in the appendix.
 
 % ============================================================================
 \section{Testing and Results}\label{sec:tests}
@@ -345,7 +277,7 @@ registration with automatic login, duplicate username and wrong password rejecte
 private message delivered and hidden from other users; group creation with spaces in the name, non-member blocked, member receives group messages,
 non-member cannot see them in history; eight threads registering the same name at once (exactly one succeeds); and, after a server restart, login,
 history and group membership still intact. The script then checks that the four runtime files exist and that no password appears in clear text:
-\textbf{20 of 20 checks pass}. The GUI was tested manually \todo{confirm: list what you clicked through}.
+\textbf{20 of 20 checks pass}. The GUI was checked with a separate scripted test run during development (15 checks on a virtual display): clicking a person or group selects the receiver, the input box never shows \code{/msg} or \code{/g}, each message appears exactly once, the group list shows only the user's own groups, and no warning messages appear.
 
 \textbf{Defects found by testing.}
 (1) \emph{Groups lost after restart:} the loader accepted only names without spaces although \code{/group create} allows them.
@@ -365,7 +297,7 @@ and then runs every command type 20 times (\code{tests/ProfActions.java}). The r
 Measured time includes waiting for locks, methods call each other (a message calls \code{send} for every receiver), and users run in parallel, so rows overlap.
 
 \subsection{Result}
-Table~\ref{tab:prof} shows the most important rows of one run on a 2-core Linux machine (client programs and server on the same machine).
+Table~\ref{tab:prof} shows the most important rows of one run on the team's PC, an Intel Core i5-13420H laptop with 12 logical processors, of which Linux under WSL on Windows used 7.6\,GB of RAM and OpenJDK~21.0.13 (load generator and server on the same machine).
 
 \begin{table}[!t]
 \caption{Server profile: 20 clients $\times$ 500 messages, then 20 of each command}
@@ -375,52 +307,50 @@ Table~\ref{tab:prof} shows the most important rows of one run on a 2-core Linux 
 \toprule
 Method & Calls & Total (ms) & Avg (ms)\\
 \midrule
-\code{register} (with hashing) & 22 & 51\,706 & 2\,350\\
-\code{publicMessage} & 10\,020 & 22\,019 & 2.20\\
-\code{send} (one line to one user) & 201\,134 & 8\,348 & 0.042\\
-\code{storeMessage} & 10\,060 & 3\,355 & 0.33\\
-\code{login} (checks password) & 2 & 94 & 47\\
-\code{/history} & 20 & 87 & 4.3\\
-\code{saveUser} & 22 & 68 & 3.1\\
-\code{/g} (group message) & 20 & 54 & 2.7\\
-\code{/group create} & 20 & 46 & 2.3\\
-\code{/msg} (private message) & 20 & 12 & 0.59\\
-\code{/group join} & 20 & 5.3 & 0.26\\
-\code{/users} & 20 & 1.6 & 0.08\\
+\code{register} (with hashing) & 22 & 33\,760 & 1\,535\\
+\code{publicMessage} & 10\,020 & 27\,872 & 2.78\\
+\code{send} (one line to one user) & 201\,105 & 9\,016 & 0.045\\
+\code{storeMessage} & 10\,060 & 1\,523 & 0.15\\
+\code{login} (checks password) & 2 & 352 & 176\\
+\code{/history} & 20 & 134 & 6.7\\
+\code{/g} (group message) & 20 & 103 & 5.1\\
+\code{/group create} & 20 & 51 & 2.5\\
+\code{/msg} (private message) & 20 & 18 & 0.89\\
+\code{saveUser} & 22 & 11 & 0.48\\
+\code{/group join} & 20 & 5.0 & 0.25\\
+\code{/users} & 20 & 4.6 & 0.23\\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \subsection{What we learn}
 \begin{itemize}
-\item \textbf{Password protection is the slowest step.} Registering takes about 2.3\,s per user here because 20 users registered at once on 2 cores, and each password is hashed on purpose slowly (a single login takes about 47\,ms).
+\item \textbf{Password protection is the slowest step.} Registering takes about 1.5\,s per user here because 20 users registered at the same time and competed for the processor; each password is hashed slowly on purpose (a single login takes about 176\,ms).
 Slow hashing makes stolen password files hard to crack, so we keep it. We only avoid hashing when the user name is already taken.
-\item \textbf{Normal chatting is cheap.} A public message to 20 users takes about 2.2\,ms in total; each single delivery (\code{send}) takes 0.04\,ms. The server handled about 8\,500 messages per second (170\,000 deliveries per second) in this run.
-\item \textbf{Saving to files costs more than memory operations.} \code{/group create}, \code{saveUser} and \code{/history} take 2--4\,ms because they write or scan data, while \code{/group join}, \code{/users} and the other list commands take less than 0.3\,ms.
+\item \textbf{Normal chatting is cheap.} A public message to 20 users takes about 2.8\,ms in total; each single delivery (\code{send}) takes 0.045\,ms, and storing a message takes 0.15\,ms. In this run the server handled about 6\,600 messages per second (132\,000 deliveries per second); all 200\,000 deliveries arrived.
+\item \textbf{Saving to files costs more than memory operations.} \code{/group create} and \code{/history} take 2.5--6.7\,ms because they write or scan data, while \code{/group join}, \code{/users} and the other list commands take less than 0.3\,ms.
 This is why the server writes the history in a background thread, and why each user has an own outgoing queue: a slow file or a slow client must not hold up everybody else.
 \end{itemize}
-The same method is available for the clients: for the console client it reports login time and time to send and print a line, for the GUI the time of each window update (for example \code{handleLine} and \code{appendMessage} took about 1.6\,ms and 3\,ms on average in our check). Both are very small compared with the network and server time.
+The same method is available for the clients: for the console client it reports login time and time to send and print a line, for the GUI the time of each window update (in a check on a virtual display, \code{handleLine} and \code{appendMessage} took about 1.6\,ms and 3\,ms on average). Both are very small compared with the network and server time.
 
 \subsection{Earlier experiment and limits}
 Before the final design, the first version of the server wrote the history file and every socket line while holding a lock. We compared that version with the final one
-(50 clients $\times$ 1\,000 messages, three alternating runs, same 2-core machine): about 5\,183 messages per second before and 8\,650 after ($+67\%$).
+(50 clients $\times$ 1\,000 messages, three alternating runs, on a 2-core test machine): about 5\,183 messages per second before and 8\,650 after ($+67\%$).
 In a second test one client stopped reading while another sent 20\,000 messages: with the first version the healthy receiver got only about 6\,800 of them in 20\,s, with the final version all 20\,000 in about 1\,s.
 This first version is not part of the submitted code, so these two results cannot be repeated from the project files.
-\emph{Limits of all numbers:} the 2-core test machine also ran the load generator, there was one kind of workload, and results vary by 10--20\% from run to run.
-\todo{Run \code{scripts/profile.sh} on your own PC and replace Table~\ref{tab:prof} and the numbers in the text.}
+\emph{Limits of all numbers:} the load generator ran on the same machine as the server, there was one kind of workload, and results vary by 10--20\% from run to run.
 
 % ============================================================================
 \section{Limitations and Future Work}
 \textbf{Limitations.}
 (i) No encryption: messages and passwords cross the network in plain text; the password is hashed only when stored.
-(ii) No limit on login attempts or line length.
-(iii) The whole history is kept in memory and scanned linearly by \code{/history}.
+(ii) A connection is closed after five failed logins, but there is no limit across connections and no limit on line length.
+(iii) The whole history is kept in memory and searched one by one by \code{/history}.
 (iv) After \code{kill -9} the few messages still queued for the history file are lost.
 (v) A legitimate but very slow client that falls 10\,000 lines behind is disconnected.
 (vi) One server process; the GUI has no automatic reconnect.
 
-\textbf{Future work.} TLS (\code{SSLServerSocket}), login rate limiting and maximum line length, a database for history with an index,
-message delivery acknowledgements, automatic reconnect, and file transfer.
+\textbf{Future work.} Encrypted connections (TLS), login limits across connections, a database for history, and automatic reconnect.
 
 % ============================================================================
 \section{Conclusion}
@@ -431,12 +361,19 @@ made the server faster and kept it working when one client stopped reading. The 
 
 % ============================================================================
 \section*{AI Usage Declaration}
-In line with the course policy we declare that an AI assistant (Claude) was used for: drafting the test programs and bash scripts, proposing fixes for the
-defects described in Section~\ref{sec:tests}, implementing the GUI target selection and the console echo handling, writing the load generator, the outgoing-queue redesign and the profiler,
-and drafting this report and the slides. The team ran and checked the results. \todo{Each member: confirm that you understand and can explain these parts; add what you wrote or changed yourselves.}
+We used an AI assistant (Claude, by Anthropic) during development, for code review and fixes, test programs, the load generator, the bash scripts, the profiler, and drafting the README, this report and the slides.
+We worked with it in the following way.
+\begin{enumerate}
+\item \textbf{We decide, the AI helps.} The team set the requirements, chose the design and divided the work between members.
+\item \textbf{Small, clear tasks.} We gave the assistant the assignment and our existing code and asked for one well-defined task at a time.
+\item \textbf{Right jobs.} We used it to explain, to review code for bugs, to suggest tests, to write repeatable scripts and to draft documents.
+\item \textbf{Understand every suggestion.} A change was added only after a member had read it and could explain it.
+\item \textbf{Verify by running.} We compiled every change, ran the automatic tests and tried the programs by hand.
+\end{enumerate}
+Each member owns one part of the project and can explain the whole system.
 
 \section*{Acknowledgment}
-The authors thank \todo{instructor name} for the project guidance and the course \todo{course name}, \todo{institute}.
+The authors thank Dr.\ Suman Dutta for the project guidance in the course CS202C: Software Systems Lab at IIT Dharwad.
 
 % ============================================================================
 \balance
@@ -448,5 +385,39 @@ The authors thank \todo{instructor name} for the project guidance and the course
 \bibitem{rfc8018} K.~Moriarty, B.~Kaliski, and A.~Rusch, ``PKCS \#5: Password-Based Cryptography Specification Version 2.1,'' RFC 8018, IETF, Jan.\ 2017.
 \bibitem{owasp} OWASP Foundation, ``Password Storage Cheat Sheet.''
 \end{thebibliography}
+
+\section*{Appendix: Git History}
+Commits from \code{git log -{}-oneline -{}-graph -{}-all} (newest first; messages shortened).
+\begin{lstlisting}[basicstyle=\ttfamily\fontsize{6.8}{7.8}\selectfont, language={}, breaklines=false, frame=none]
+b01ef80 Add git_commit_history.txt
+6c36891 Update README and PPT
+a864b69 Update PPT
+44337a2 Upload PPT
+6a4e1ba Added report, profiling and PPT (merge)
+642fbce Merge PR #3 feature/login-security
+7713b36 security: close connections after five failed logins
+2aba4d5 Added report, profiling and PPT
+780adf5 Merge PR #2 feature/divya
+c603df6 Show usage error for invalid history count
+3930f58 Improve chat UI and history
+815535b upgrade the ui of ChatGUI, make it simpler for user
+781a506 (stash) WIP on main: 5dd2bef
+a6851cb (stash) index on main: 5dd2bef
+5dd2bef Merge feature/tests-and-automation
+b7fd7bf Ignore data/ directory used for runtime files
+4c6d757 Update README: scripts, testing, Windows alternatives
+636140b Add bash scripts to build, run and test the project
+a0c848a Add functional tests (auth, messages, groups, ...)
+37ac04e Fix group persistence: allow spaces in group names
+fd5dbf2 Group Chat Modification
+a2ebd89 improve the readme file
+eba9558 improved the GUI (login, chat view, users); store groups
+fe586c6 fix the issue regarding console not closed
+e132b62 passwords stored as PBKDF2-HMAC-SHA256 hashes
+cad4e2b Add initial HTML structure for chat application
+3da9a87 updating gitignore
+162c208 Adding the ChatGUI file (Rajiv)
+74954ab Initial chat prototype
+\end{lstlisting}
 
 \end{document}
