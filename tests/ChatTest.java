@@ -6,15 +6,20 @@ import java.util.concurrent.atomic.AtomicInteger;
 /** Functional tests for ChatServer. Usage: java -cp bin ChatTest [port] [main|persist] */
 public class ChatTest {
     static int port = 5000, pass = 0, fail = 0;
+    static final String DISCONNECTED = "__CHAT_TEST_DISCONNECTED__";
 
     static class C {   // minimal test client: a socket plus a thread collecting server lines
         PrintWriter out;
         BlockingQueue<String> q = new LinkedBlockingQueue<>();
         C() throws Exception {
-            Socket s = new Socket("localhost", port);
-            out = new PrintWriter(s.getOutputStream(), true);
-            BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()));
-            Thread t = new Thread(() -> { try { String l; while ((l = in.readLine()) != null) q.add(l); } catch (IOException e) { } });
+            Socket socket = new Socket("localhost", port);
+            out = new PrintWriter(socket.getOutputStream(), true);
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            Thread t = new Thread(() -> {
+                try { String l; while ((l = in.readLine()) != null) q.add(l); }
+                catch (IOException e) { }
+                finally { q.add(DISCONNECTED); }
+            });
             t.setDaemon(true); t.start();
         }
         void send(String x) { out.println(x); }
@@ -31,6 +36,9 @@ public class ChatTest {
             send(cmd);
             for (String l; (l = q.poll(15, TimeUnit.SECONDS)) != null; ) if (l.startsWith("OK") || l.startsWith("ERR")) return l;
             return "TIMEOUT";
+        }
+        boolean disconnected(long ms) throws Exception {
+            return DISCONNECTED.equals(q.poll(ms, TimeUnit.MILLISECONDS));
         }
         String hist() throws Exception {   // everything /history returns
             send("/history 100");
@@ -56,6 +64,17 @@ public class ChatTest {
         ok("wrong password rejected", b.auth("LOGIN alice wrong").startsWith("ERR"));
         ok("second user registers", b.auth("REGISTER bob pw123").startsWith("OK"));
         c.auth("REGISTER carol pw123");
+
+        C limited = new C();
+        boolean attemptsRejected = true;
+        for (int i = 1; i <= 5; i++) {
+            String response = limited.auth("LOGIN unknown bad");
+            String expected = i < 5
+                    ? "ERR Invalid username or password"
+                    : "ERR Too many failed authentication attempts; reconnect to try again";
+            attemptsRejected &= expected.equals(response);
+        }
+        ok("connection closed after five failed logins", attemptsRejected && limited.disconnected(3000));
 
         a.send("hello all");
         String l = b.get("alice: hello all", 3000);
