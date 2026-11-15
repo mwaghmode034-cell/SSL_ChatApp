@@ -1,605 +1,257 @@
 \documentclass[aspectratio=169,11pt]{beamer}
-
+\usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-\usepackage{booktabs}
 \usepackage{tikz}
-\usetikzlibrary{arrows.meta,positioning,fit,calc}
+\usepackage[table]{xcolor}
+\usepackage{booktabs}
+\usetikzlibrary{arrows.meta,positioning,calc}
 
-\definecolor{ink}{HTML}{006B50}
-\definecolor{bluegray}{HTML}{486176}
-\definecolor{teal}{HTML}{087F8C}
-\definecolor{tealLight}{HTML}{E4F3F3}
-\definecolor{gold}{HTML}{D89B32}
-\definecolor{paper}{HTML}{F4F7FA}
-\definecolor{line}{HTML}{D9E2EA}
-\definecolor{muted}{HTML}{627487}
-\definecolor{white}{HTML}{FFFFFF}
+% ================= THEME =================
+\definecolor{navy}{HTML}{0F4C81}
+\definecolor{ink}{HTML}{1D3F66}
+\definecolor{amber}{HTML}{F2A33A}
+\definecolor{cyan2}{HTML}{4FC3F7}
+\definecolor{mist}{HTML}{EEF6FC}
+\definecolor{slate}{HTML}{66758C}
+\definecolor{line}{HTML}{D3E3F1}
 
+\usetheme{default}
+\usefonttheme{professionalfonts}
 \setbeamertemplate{navigation symbols}{}
-\setbeamersize{text margin left=0.62cm,text margin right=0.62cm}
-\setbeamercolor{background canvas}{bg=paper}
-\setbeamercolor{normal text}{fg=ink,bg=paper}
-\setbeamercolor{frametitle}{fg=white,bg=ink}
-\setbeamercolor{structure}{fg=teal}
-\setbeamercolor{itemize item}{fg=teal}
-\setbeamercolor{itemize subitem}{fg=gold}
-\setbeamercolor{card}{fg=ink,bg=white}
-\setbeamercolor{card title}{fg=teal,bg=white}
-\setbeamercolor{alerted text}{fg=teal}
-\setbeamerfont{frametitle}{size=\Large,series=\bfseries}
-\setbeamerfont{title}{size=\Huge,series=\bfseries}
-\setbeamerfont{subtitle}{size=\large}
-\setbeamertemplate{itemize item}{\raise0.15ex\hbox{\color{teal}\rule{0.55ex}{0.55ex}}}
-\setbeamertemplate{itemize subitem}{\raise0.15ex\hbox{\color{gold}\rule{0.45ex}{0.45ex}}}
+\setbeamercolor{normal text}{fg=ink}
+\setbeamercolor{itemize item}{fg=amber}
+\setbeamertemplate{itemize item}[square]
+\setbeamertemplate{itemize subitem}[circle]
 
-\newlength{\progresswidth}
-\setbeamertemplate{frametitle}{
+\setbeamertemplate{frametitle}{%
   \nointerlineskip
-  \begin{beamercolorbox}[wd=\paperwidth,ht=0.78cm,dp=0.20cm,leftskip=0.62cm,rightskip=0.62cm]{frametitle}
-    \usebeamerfont{frametitle}\insertframetitle
-  \end{beamercolorbox}
-}
-\setbeamertemplate{footline}{
-  \leavevmode
-  \hbox{
-    \begin{beamercolorbox}[wd=0.82\paperwidth,ht=2.6ex,dp=1.1ex,leftskip=0.62cm]{author in head/foot}
-      \color{muted}\scriptsize Multi-client Chat Application \hspace{0.6em}\textcolor{line}{|}\hspace{0.6em} IIT Dharwad
-    \end{beamercolorbox}
-    \begin{beamercolorbox}[wd=0.18\paperwidth,ht=2.6ex,dp=1.1ex,rightskip=0.62cm plus 1fil]{date in head/foot}
-      \color{muted}\scriptsize\insertframenumber/\inserttotalframenumber
-    \end{beamercolorbox}
-  }
-  \begin{beamercolorbox}[wd=\paperwidth,ht=2pt,dp=0pt]{background canvas}
-    \pgfmathsetlength{\progresswidth}{\paperwidth*\insertframenumber/\inserttotalframenumber}
-    \color{teal}\rule{\progresswidth}{2pt}
-  \end{beamercolorbox}
-}
+  \begin{beamercolorbox}[wd=\paperwidth,ht=6ex,dp=2ex,leftskip=1.4em]{frametitle}
+    \color{white}\fontsize{19}{22}\selectfont\bfseries\insertframetitle
+  \end{beamercolorbox}%
+  \nointerlineskip
+  \begin{beamercolorbox}[wd=\paperwidth,ht=0pt,dp=2pt]{accentbar}\end{beamercolorbox}}
+\setbeamertemplate{footline}{%
+  \hbox to \paperwidth{\hspace{1.4em}\color{slate}\scriptsize
+    Multi-client Chat Application \;\textbullet\; IIT Dharwad
+    \hfill \color{navy}\bfseries\insertframenumber\,/\,\inserttotalframenumber\hspace{1.4em}}\vskip 2.2ex}
+\setbeamercolor{frametitle}{bg=navy}
+\setbeamercolor{accentbar}{bg=amber}
 
-\newcommand{\code}[1]{\texttt{\small #1}}
-\newcommand{\eyebrow}[1]{\textcolor{teal}{\bfseries\scriptsize #1}}
+% ================= HELPERS =================
+\newcommand{\hl}[1]{{\color{amber}\bfseries #1}}
+\newcommand{\code}[1]{{\ttfamily\color{navy}#1}}
+\newcommand{\kicker}[1]{{\color{amber}\bfseries\scriptsize\MakeUppercase{#1}}}
+
+% card with accent top edge: \card{width}{title}{body}
+\newcommand{\cardmin}{1.9cm}
 \newcommand{\card}[3]{%
-  \begin{beamercolorbox}[wd=#1,sep=0.16cm,rounded=true]{card}
-    {\color{teal}\bfseries\small #2}\par\vspace{0.08cm}
-    {\small #3}
-  \end{beamercolorbox}%
-}
-\newcommand{\metric}[3]{%
-  \begin{beamercolorbox}[wd=#1,sep=0.18cm,rounded=true]{card}
-    {\color{teal}\Large\bfseries #2}\par\vspace{0.04cm}
-    {\color{muted}\scriptsize #3}
-  \end{beamercolorbox}%
-}
+  \begin{tikzpicture}
+    \node[fill=mist,draw=line,rounded corners=3pt,inner sep=7pt,anchor=north west] (b) {\parbox[t][\dimexpr\cardmin-14pt\relax][t]{#1}{\raggedright%
+      {\bfseries\small\color{navy}#2}\\[2pt]{\footnotesize\color{ink}#3}}};
+    \fill[amber,rounded corners=1pt] (b.north west) rectangle ([yshift=-2.2pt]b.north east);
+  \end{tikzpicture}}
+
+% big number: \stat{value}{label}
+\newcommand{\stat}[2]{%
+  \begin{tikzpicture}
+    \node[fill=navy,rounded corners=4pt,inner sep=5pt,text width=3.0cm,align=center]{%
+      {\color{amber}\fontsize{20}{23}\selectfont\bfseries #1}\\[1pt]{\color{white}\scriptsize #2}};
+  \end{tikzpicture}}
+
+% team row: \member{initials}{name}{role}{text}
+\newcommand{\member}[4]{%
+  \begin{tikzpicture}
+    \node[fill=mist,draw=line,rounded corners=3pt,minimum width=13.4cm,minimum height=0.88cm,anchor=west] (b) at (0,0) {};
+    \fill[amber] (b.south west) rectangle ([xshift=2.5pt]b.north west);
+    \node[circle,fill=navy,text=white,minimum size=8mm,inner sep=0pt,font=\bfseries\scriptsize] at (0.8,0) {#1};
+    \node[anchor=west,text width=4.7cm,align=left] at (1.45,0) {{\bfseries\footnotesize\color{navy}#2}\\[-1pt]{\color{amber}\bfseries\tiny #3}};
+    \node[anchor=west,text width=6.3cm,align=left] at (6.3,0) {\footnotesize\color{ink}#4};
+  \end{tikzpicture}\\[0.4mm]}
 
 \title{Multi-client Chat Application}
-\subtitle{Concurrent client--server messaging in Java}
 \author{Waghmode Mahesh Bapu \and Pawar Shravan Mahesh \and Rajiv Singh \and Adhav Shubham Balasaheb \and Divya Pratap Ade}
 \institute{IIT Dharwad}
-\date{\today}
+\date{November 16, 2026}
 
 \begin{document}
 
-% 1. Title
+% ================= 1. TITLE =================
+{
+\setbeamercolor{background canvas}{bg=navy}
+\setbeamertemplate{footline}{}
 \begin{frame}[plain]
   \begin{tikzpicture}[remember picture,overlay]
-    \fill[ink] (current page.south west) rectangle (current page.north east);
-    \fill[teal] (current page.north west) rectangle ([yshift=-0.11cm]current page.north east);
-    \fill[gold] (current page.south west) rectangle ([xshift=0.12cm]current page.north west);
-    \draw[teal!55,line width=1.2pt] ([xshift=7.6cm,yshift=0.8cm]current page.center)
-      -- ([xshift=9.0cm,yshift=1.7cm]current page.center)
-      -- ([xshift=10.6cm,yshift=0.55cm]current page.center)
-      -- ([xshift=9.1cm,yshift=-1.1cm]current page.center)
-      -- ([xshift=7.6cm,yshift=0.8cm]current page.center);
-    \draw[teal!55,line width=1.2pt] ([xshift=9.0cm,yshift=1.7cm]current page.center)
-      -- ([xshift=9.1cm,yshift=-1.1cm]current page.center);
-    \foreach \x/\y/\r/\c in {
-      7.6/0.8/0.13/teal,9.0/1.7/0.16/gold,10.6/0.55/0.13/teal,9.1/-1.1/0.16/gold,8.35/0.2/0.10/white}
-      \fill[\c] ([xshift=\x cm,yshift=\y cm]current page.center) circle (\r cm);
+    \fill[ink] ([xshift=-5.5cm]current page.north east) circle (5cm);
+    \fill[cyan2,opacity=0.18] ([xshift=-1cm,yshift=-6.5cm]current page.north east) circle (2.4cm);
+    \fill[amber] ([xshift=1.4cm,yshift=-2.2cm]current page.north west) rectangle ++(0.09,4.3);
   \end{tikzpicture}
-  \vspace{1.25cm}
-  \begin{minipage}{0.68\textwidth}
-    \eyebrow{PROJECT 09 \quad | \quad \textbf{NETWORKED SYSTEMS}}
-    \vspace{0.42cm}
-
-    {\color{white}\Huge\bfseries Multi-client\\[0.05cm] Chat Application}
-
-    \vspace{0.28cm}
-    {\color{teal!35!white}\large Concurrent client--server messaging in Java}
-
-    \vspace{0.75cm}
-    {\color{white}\small
-      Waghmode Mahesh Bapu \quad Pawar Shravan Mahesh\\
-      Rajiv Singh \quad Adhav Shubham Balasaheb \quad Divya Pratap Ade}
-
-    \vspace{0.34cm}
-    {\color{teal!35!white}\small IIT Dharwad \hspace{0.7em}|\hspace{0.7em} \today}
+  \vspace{9mm}
+  \hspace{1.0cm}\begin{minipage}{0.78\paperwidth}
+    {\color{amber}\bfseries\scriptsize TERM PROJECT \;|\; CS202C SOFTWARE SYSTEMS LAB}\\[5mm]
+    {\color{white}\fontsize{34}{42}\selectfont\bfseries Multi-client\\Chat Application}\\[4mm]
+    {\color{white!75!navy}\Large A concurrent client--server system in Java}\\[2mm]
+    {\color{cyan2}\normalsize Private \& group messaging \;\textbullet\; persistent history \;\textbullet\; performance profiling}\\[10mm]
+    {\color{amber}\bfseries\scriptsize UNDER THE GUIDANCE OF}\\[1mm]{\color{white}\large\bfseries Prof.\ Dr.\ Suman Dutta}\\[2mm]
+    {\color{white!60!navy}\scriptsize IIT Dharwad \;|\; November 16, 2026}
   \end{minipage}
 \end{frame}
-
-% 2. Why this system
-\begin{frame}{The engineering problem}
-  \begin{columns}[T,onlytextwidth]
-    \column{0.43\textwidth}
-      \eyebrow{A SMALL SYSTEM, REAL CONCURRENCY}
-      \vspace{0.16cm}
-
-      {\Large\bfseries Many conversations share one server.}
-
-      \vspace{0.22cm}
-      \small
-      Every connected client can act at once. The server must route each message
-      to the right audience while keeping account and conversation state consistent.
-
-      \vspace{0.25cm}
-      \textcolor{muted}{The implementation therefore has to address four related concerns:}
-
-    \column{0.54\textwidth}
-      \card{0.84\linewidth}{Identity}{Reject duplicate accounts and coordinate simultaneous logins.}
-      \hfill
-      \card{0.50\linewidth}{Audience}{Keep public, private and group delivery distinct.}
-      \vspace{0.16cm}
-      \card{0.48\linewidth}{Responsiveness}{Avoid letting a stalled client or disk write block message handling.}
-      \hfill
-      \card{1.13\linewidth}{Durability}{Recover users, groups and chat history after restart.}
-  \end{columns}
-\end{frame}
-
-% 3. Architecture
-\begin{frame}{Architecture | one server, several client paths}
-  \centering
-  \begin{tikzpicture}[
-    >=Stealth,
-    font=\scriptsize,
-    node distance=5mm and 12mm,
-    unit/.style={draw=line,rounded corners=2pt,align=center,minimum height=8mm,
-                 minimum width=27mm,inner sep=3pt,fill=white},
-    client/.style={unit,draw=teal!55,fill=tealLight},
-    service/.style={unit,draw=ink!35,fill=white},
-    store/.style={unit,draw=gold!70!ink,fill=gold!12}
-  ]
-    \node[client] (console) at (0,1.05) {Console client\\\code{ChatClient}};
-    \node[client] (gui) at (0,-0.25) {Swing client\\\code{ChatGUI}};
-
-    \node[service,minimum width=31mm] (accept) at (3.85,1.45) {TCP accept loop\\\code{ServerSocket}};
-    \node[service,minimum width=31mm] (handler) at (3.85,0.15) {Client handler\\cached thread pool};
-    \node[service,minimum width=31mm] (outbox) at (3.85,-1.15) {Per-client outbox\\writer thread};
-
-    \node[store,minimum width=34mm] (state) at (8.0,0.8) {Shared state\\users, online users, groups, history};
-    \node[service,minimum width=34mm] (writer) at (8.0,-0.55) {History writer\\queue and batched append};
-    \node[store,minimum width=34mm] (files) at (8.0,-1.9) {Local files\\users, groups, history, server log};
-
-    \draw[<->,thick,teal] (console.east) -- node[above]{TCP / text lines} (accept.west);
-    \draw[<->,thick,teal] (gui.east) -- (handler.west);
-    \draw[->,thick,ink!65] (accept) -- (handler);
-    \draw[->,thick,ink!65] (handler) -- (outbox);
-    \draw[<->,thick,ink!65] (handler.east) -- (state.west);
-    \draw[->,thick,gold!80!ink] (state) -- (writer);
-    \draw[->,thick,gold!80!ink] (writer) -- (files);
-    
-  \end{tikzpicture}
-
-  
-\vspace{0.16cm}
-\begin{beamercolorbox}[wd=0.96\textwidth,sep=0.13cm,rounded=true]{card}
-  \small
-  \textbf{Network deployment:}
-  Clients on the same local network can connect using the server's IP address and port,
-  rather than localhost.
-\end{beamercolorbox}
-
-\vspace{0.10cm}
-\scriptsize\textcolor{muted}{The clients share the same line-oriented protocol; the GUI is an alternate interface, not a separate service.}
-
-\end{frame}
-
-% 4. Message workflow
-\begin{frame}{Message lifecycle | from input to recipients}
-  \centering
-  \begin{tikzpicture}[
-    >=Stealth,
-    font=\small,
-    step/.style={draw=line,rounded corners=3pt,fill=white,align=center,
-                 minimum width=2.35cm,minimum height=1.05cm,inner sep=5pt},
-    flow/.style={->,line width=1.1pt,draw=teal}
-  ]
-    \node[step] (input) at (0,0) {\textbf{Input}\\command or text};
-    \node[step] (parse) at (3.0,0) {\textbf{Parse}\\handler selects route};
-    \node[step] (message) at (6.0,0) {\textbf{Record}\\timestamp + history queue};
-    \node[step] (deliver) at (9.0,0) {\textbf{Deliver}\\recipient outboxes};
-    \draw[flow] (input) -- (parse);
-    \draw[flow] (parse) -- (message);
-    \draw[flow] (message) -- (deliver);
-
-    \node[step,draw=gold!75!ink,fill=gold!10,minimum width=3.0cm] (disk) at (6.0,-1.72)
-      {\textbf{History writer}\\batch append to \code{history.log}};
-    \draw[->,line width=1.0pt,draw=gold!80!ink] (message.south) -- (disk.north);
-
-    \node[anchor=north,align=center,text=muted,font=\scriptsize] at (9.0,-0.72)
-      {Public: online users\\Private: sender and recipient\\Group: online group members};
-  \end{tikzpicture}
-
-  \vspace{0.1cm}
-  \begin{beamercolorbox}[wd=0.92\textwidth,sep=0.13cm,rounded=true]{card}
-    \small Message handling queues socket output; each client writer performs the actual network writes.
-  \end{beamercolorbox}
-\end{frame}
-
-% 5. Protocol and clients
-\begin{frame}{One protocol, two user experiences}
-  \begin{columns}[T,onlytextwidth]
-    \column{0.47\textwidth}
-      \eyebrow{TEXT PROTOCOL}
-      \vspace{0.12cm}
-      \begin{beamercolorbox}[wd=\linewidth,sep=0.18cm,rounded=true]{card}
-        \code{REGISTER alice pass}\\
-        \textcolor{teal}{\code{OK Logged in as alice}}\\[0.12cm]
-        \code{hello everyone}\\
-        \code{/msg bob private text}\\
-        
-\code{/g Study Group hello team}\\
-\code{/group create|join|leave <name>}\\
-\code{/group list}\\
-\code{/group members <name>}\\
-\code{/users \quad /history 20}
-
-      \end{beamercolorbox}
-      \vspace{0.12cm}
-      \small The server reads one command or message per line. Messages carry
-      timestamps; history visibility is filtered by message type and membership.
-
-    \column{0.49\textwidth}
-      \card{1.2\linewidth}{Console}{A main thread sends typed lines; a reader thread prints server responses.}
-      \vspace{0.16cm}
-      \hfill
-      \card{0.48\linewidth}{Swing GUI}{Click a person or group to set the target; type only the message.}
-      \vspace{0.16cm}
-      \card{0.48\linewidth}{Server routing}{\code{/msg} targets one account; \code{/g} targets members; plain text is public.}
-      \hfill
-      \card{1.16\linewidth}{History access}{Public messages are visible to all; private and group history is scoped.}
-  \end{columns}
-\end{frame}
-
-% 6. Concurrency details
-\begin{frame}{Concurrency | protect invariants, isolate slow work}
-  \begin{columns}[T,onlytextwidth]
-    \column{0.49\textwidth}
-      \eyebrow{STATE CORRECTNESS}
-      \vspace{0.14cm}
-      \card{0.96\linewidth}{Single registration winner}{
-        \code{ConcurrentHashMap.putIfAbsent} prevents duplicate usernames during concurrent registration.}
-      \vspace{0.15cm}
-      \card{0.96\linewidth}{Login response ordering}{
-       Handler lock ensures login confirmation precedes join broadcasts}
-      \vspace{0.15cm}
-      \card{0.96\linewidth}{History ordering}{
-       Synchronization keeps memory history and disk queue in order.}
-
-    \column{0.49\textwidth}
-      \eyebrow{BACKPRESSURE AND I/O}
-      \vspace{0.14cm}
-      \card{0.96\linewidth}{Bounded client outbox}{
-        Each client has a queue capped at 10,000 lines. A full queue closes that
-        slow client instead of blocking other message handlers.}
-      \vspace{0.15cm}
-      \card{0.96\linewidth}{Dedicated writer threads}{
-        Per-client writers drain queued lines in batches and flush once per batch.}
-      \vspace{0.15cm}
-      \card{0.96\linewidth}{Background history writer}{
-        A separate thread drains the history queue and appends batches to disk.}
-  \end{columns}
-\end{frame}
-
-% 7. Authentication and persistence
-\begin{frame}{Authentication and persistence}
-  \begin{columns}[T,onlytextwidth]
-   
-\column{0.49\textwidth}
-  \eyebrow{PASSWORD STORAGE}
-  \vspace{0.12cm}
-
-  \begin{beamercolorbox}[wd=0.96\linewidth,sep=0.18cm,rounded=true]{card}
-    \begin{tabular}{@{}p{0.34\linewidth}p{0.58\linewidth}@{}}
-      {\color{teal}\Large\bfseries 210,000} &
-      {\small PBKDF2-HMAC-SHA256 iterations}\\[0.22cm]
-
-      {\color{teal}\Large\bfseries 16 bytes} &
-      {\small Random salt per account}\\[0.22cm]
-
-      {\color{teal}\Large\bfseries 256 bits} &
-      {\small Derived hash output}
-    \end{tabular}
-  \end{beamercolorbox}
-
-  \vspace{0.20cm}
-
-  \small
-  Password verification uses \code{MessageDigest.isEqual}.
-  Older SHA-256 records are upgraded after successful login.
-
-  \vspace{0.10cm}
-  Five failed login attempts close the connection.
-
-
-    \column{0.49\textwidth}
-      \eyebrow{FILES, NOT A DATABASE}
-      \vspace{0.14cm}
-      \begin{tabular}{@{}ll@{}}
-        \toprule
-        File & Role\\
-        \midrule
-        \code{users.txt} & Account names and password hashes\\
-        \code{groups.txt} & Group membership\\
-        \code{history.log} & Timestamped chat records\\
-        \code{server.log} & Operational events\\
-        \bottomrule
-      \end{tabular}
-      \vspace{0.16cm}
-
-      \small Users, groups and history are loaded at startup. Group updates use
-      a temporary file followed by replacement; history is appended by its
-      background writer.
-  \end{columns}
-\end{frame}
-
-% 8. Validation approach
-\begin{frame}{Validation | functional, restart and load checks}
-  \begin{columns}[T,onlytextwidth]
-    \column{0.32\textwidth}
-      \card{0.96\linewidth}{Functional behavior}{
-        Registration and login, public timestamps, private delivery and privacy,
-        group membership and message visibility.}
-    \column{0.32\textwidth}
-      \card{0.96\linewidth}{Concurrency and limits}{
-        Eight simultaneous attempts to register one name; five failed logins
-        close a connection; a non-member cannot post to a group.}
-    \column{0.32\textwidth}
-      \card{0.96\linewidth}{Persistence and load}{
-        The test script restarts the server and checks stored users, history and
-        groups. Load and slow-client programs exercise delivery behavior.}
-  \end{columns}
-
-  \vspace{0.28cm}
-  
-\begin{beamercolorbox}[wd=\textwidth,sep=0.14cm,rounded=true]{card}
-  \eyebrow{REPRODUCIBLE ENTRY POINTS}
-
-  \small
-  \code{scripts/test.sh} starts the server and runs 20 automated
-  checks, including restart and persistence tests.
-
-  \code{scripts/profile.sh} runs a 20-client,
-  500-message-per-client profiling workload.
-
-  \vspace{0.08cm}
-  \textcolor{teal}{\textbf{Result:}} All 20 checks passed.
-\end{beamercolorbox}
-
-\vspace{0.12cm}
-\end{frame}
-\begin{frame}
-\begin{beamercolorbox}[wd=\textwidth,sep=0.12cm,rounded=true]{card}
-  \eyebrow{BUGS FOUND DURING TESTING}
-
-  \small
-  \begin{itemize}
-    \item Groups were lost after server restart.
-    \item A login race appeared under 50 concurrent users.
-    \item Unnecessary password hashing wasted computation.
-  \end{itemize}
-\end{beamercolorbox}
-
-
-  \vspace{0.12cm}
-  \scriptsize\textcolor{muted}{The load generator expects $N \times M \times N$ deliveries for $N$ clients sending $M$ public messages each.}
-\end{frame}
-
-% 9. Measurements
-\begin{frame}{Measured profile | where time goes}
-  \small
-  \begin{columns}[T,onlytextwidth]
-    \column{0.31\textwidth}
-      \eyebrow{RECORDED RUN}
-      \vspace{0.16cm}
-      \metric{0.96\linewidth}{20 x 500}{clients x public messages each}
-      \vspace{0.15cm}
-      \metric{0.96\linewidth}{10,000}{load messages, before command workload}
-      \vspace{0.16cm}
-      \scriptsize\textcolor{muted}{Values below are averages from \code{docs/profiling/profile.txt}.}
-
-    \column{0.66\textwidth}
-     
-\begin{tabular}{@{}lrrr@{}}
-  \toprule
-  Method & Calls & Total (ms) & Avg (ms)\\
-  \midrule
-  \code{register} & 22 & 51,706 & 2,350.28\\
-  \code{hashPassword} & 22 & -- & 2,346.07\\
-  \code{publicMessage} & 10,020 & 22,019 & 2.1975\\
-  \code{send} & 201,134 & 8,348 & 0.0415\\
-  \code{storeMessage} & 10,060 & 3,355 & 0.3335\\
-  \code{/history} & 20 & 87 & 4.3272\\
-  \code{/group create} & 20 & 46 & 2.3\\
-  \code{/group join} & 20 & 5.3 & 0.26\\
-  \bottomrule
-\end{tabular}
-
-
-      \vspace{0.22cm}
-     
-\begin{beamercolorbox}[wd=\linewidth,sep=0.13cm,rounded=true]{card}
-  \small
-  \textbf{Interpretation:}
-  \begin{itemize}
-    \item Password hashing is the slowest operation by design.
-    \item One public message to 20 users takes approximately 2 ms.
-    \item One delivery enqueue takes approximately 0.04 ms.
-    
-  \end{itemize}
-\end{beamercolorbox}
-
-  \end{columns}
-
-  \vspace{0.12cm}
-  \end{frame}
-  \begin{frame}{Measured profile | where time goes}
-      
-  
-\vspace{0.08cm}
-\begin{beamercolorbox}[wd=\textwidth,sep=0.12cm,rounded=true]{card}
-  \small
-  \textbf{Performance observations}
-  \begin{itemize}
-    \item Approximately 8,500 messages/sec on a 2-core machine.
-    \item Slow-client test: 20,000 messages received versus
-    approximately 6,800 in the first version.
-  \end{itemize}
-\end{beamercolorbox}
-
-\vspace{0.08cm}
-\scriptsize\textcolor{muted}{
-Profiler rows include nested work and overlap across threads.
-Totals are not additive; measurements are from one run.
 }
 
+% ================= 2. TEAM =================
+\begin{frame}[t]{Team \& Contributions}
+  \member{MW}{Waghmode Mahesh Bapu}{SERVER \& AUTOMATION}{Multi-threaded server, bash automation scripts and the test suite.}
+  \member{SP}{Pawar Shravan Mahesh}{CONSOLE CLIENT}{Console client and its connection to the server (reader/sender threads).}
+  \member{RS}{Rajiv Singh}{GUI CLIENT}{Designed and built the Swing chat client with click-to-select targets.}
+  \member{SA}{Adhav Shubham Balasaheb}{PROFILING}{Load testing, profiler and the performance study.}
+  \member{DA}{Divya Pratap Ade}{DOCUMENTATION}{README, project report and project write-up.}
 \end{frame}
 
-% 10. Design tradeoffs and limitations
-\begin{frame}{Trade-offs and current limits}
-  \begin{columns}[T,onlytextwidth]
-    \column{0.49\textwidth}
-      \eyebrow{WHAT THE DESIGN GAINS}
-      \vspace{0.14cm}
-      \begin{itemize}
-        \item Queued socket writes isolate message handling from slow readers.
-        \item Asynchronous history writes keep file I/O off the message path.
-        \item Restart persistence requires no external database service.
-      \end{itemize}
-
-    \column{0.49\textwidth}
-      \eyebrow{WHAT IT DOES NOT SOLVE}
-      \vspace{0.14cm}
-      \begin{itemize}
-        \item TCP traffic is plaintext; stored password hashes do not encrypt the connection.
-        \item History stays in memory and \code{/history} scans it linearly.
-        \item A client more than 10,000 queued lines behind is disconnected.
-        \item Abrupt termination can lose history still waiting in the write queue.
-      \end{itemize}
+% ================= 3. PROBLEM & ARCHITECTURE =================
+\begin{frame}[t]{Problem \& Architecture}
+  \vspace{2mm}
+  {\normalsize\bfseries One server, many simultaneous users --- consistent, responsive and durable.}\\[2mm]
+  \begin{columns}[T]
+    \column{0.235\textwidth}\card{2.65cm}{Identity}{Unique names, safe logins}
+    \column{0.235\textwidth}\card{2.65cm}{Audience}{Public, private and group routing}
+    \column{0.235\textwidth}\card{2.65cm}{Responsiveness}{A slow client never blocks others}
+    \column{0.235\textwidth}\card{2.65cm}{Durability}{State survives a restart}
   \end{columns}
-
-  \vspace{0.20cm}
-  \begin{beamercolorbox}[wd=\textwidth,sep=0.14cm,rounded=true]{card}
-    \eyebrow{NEXT STEPS}
-    \hspace{0.4em}TLS transport \quad|\quad indexed database history \quad|\quad
-    global login rate limits \quad|\quad reconnect and delivery acknowledgements
-  \end{beamercolorbox}
+  \vspace{4mm}
+  \begin{center}
+  \begin{tikzpicture}[node distance=5mm,
+      box/.style={fill=navy,text=white,rounded corners=4pt,align=center,font=\footnotesize,minimum height=11mm,minimum width=21mm,inner sep=3pt},
+      sub/.style={font=\tiny,text=amber},
+      arr/.style={-{Stealth[length=2.6mm]},amber,very thick}]
+    \node[box] (c) {\bfseries Clients\\[-1pt]\textcolor{amber}{\tiny Console + Swing}};
+    \node[box,right=of c] (a) {\bfseries TCP accept\\[-1pt]\textcolor{amber}{\tiny ServerSocket}};
+    \node[box,right=of a] (h) {\bfseries Handlers\\[-1pt]\textcolor{amber}{\tiny thread pool + writers}};
+    \node[box,right=of h] (s) {\bfseries Shared state\\[-1pt]\textcolor{amber}{\tiny users, groups, history}};
+    \node[box,right=of s] (f) {\bfseries Local files\\[-1pt]\textcolor{amber}{\tiny users, groups, logs}};
+    \draw[arr] (c)--(a); \draw[arr] (a)--(h); \draw[arr] (h)--(s); \draw[arr] (s)--(f);
+  \end{tikzpicture}
+  \end{center}
+  {\footnotesize\color{slate} One text protocol for both clients; works across a LAN using the server's IP and port.}
 \end{frame}
 
-% 11. Demo and build
-\begin{frame}{Live walkthrough | build, run, verify}
-  \begin{columns}[T,onlytextwidth]
-    \column{0.54\textwidth}
-      \eyebrow{WINDOWS / POWERSHELL}
-      
-\vspace{0.16cm}
-\begin{beamercolorbox}[wd=\linewidth,sep=0.13cm,rounded=true]{card}
-  \eyebrow{AUTOMATED LAUNCH}
-
-  \small
-  \code{scripts/run.sh server 5000}
-
-  \vspace{0.06cm}
-  Builds and launches the server, console client
-  and GUI through the automation script.
-\end{beamercolorbox}
-
-      \vspace{0.12cm}
-      \begin{beamercolorbox}[wd=\linewidth,sep=0.18cm,rounded=true]{card}
-        \code{javac -encoding UTF-8 -d bin @sources.txt}\\[0.1cm]
-        \code{java -cp bin ChatServer 5000}\\[0.1cm]
-        \code{java -cp bin ChatGUI}\\[0.1cm]
-        \code{java -cp bin ChatClient localhost 5000}
-      \end{beamercolorbox}
-      \vspace{0.14cm}
-      \scriptsize JDK 11+; the Bash automation scripts run on Linux, macOS, WSL or Git Bash.
-
-    \column{0.43\textwidth}
-      \eyebrow{DEMO SCRIPT}
-      \vspace{0.10cm}
-      \begin{enumerate}
-        \item Register two users through the GUI and console.
-        \item Send a public message, then a private message.
-        \item Create a group; join it from the second client and chat.
-        \item Request \code{/history}; restart and verify persistence.
-        \item Run \code{scripts/test.sh}.
-      \end{enumerate}
+% ================= 4. PROTOCOL & SECURITY =================
+\begin{frame}[t]{One Protocol, Three Message Routes}
+  \renewcommand{\cardmin}{2.55cm}\vspace{2mm}
+  \begin{columns}[T]
+    \column{0.31\textwidth}\card{3.6cm}{Public}{\code{hello everyone}\\Sent to everyone online; history visible to all.}
+    \column{0.31\textwidth}\card{3.6cm}{Private}{\code{/msg bob hi}\\One account only; history limited to the two users.}
+    \column{0.31\textwidth}\card{3.6cm}{Group}{\code{/g Study hello}\\Members only; non-members cannot post or read.}
   \end{columns}
+  \vspace{4mm}
+  \begin{columns}[T]
+    \column{0.47\textwidth}
+    \kicker{Clients}
+    \begin{itemize}\footnotesize\setlength\itemsep{2pt}
+      \item \textbf{Console:} sender + reader threads
+      \item \textbf{Swing GUI:} click a target, type the message
+      \item Every message carries a server time stamp
+    \end{itemize}
+    \column{0.47\textwidth}
+    \kicker{Security}
+    \begin{itemize}\footnotesize\setlength\itemsep{2pt}
+      \item PBKDF2-HMAC-SHA256, 210,000 rounds, random salt
+      \item Five failed logins close the connection
+      \item Input sanitised to protect the history file
+    \end{itemize}
+  \end{columns}
+  \vspace{3mm}
+  {\scriptsize\color{slate} Other commands: \code{/group create|join|leave|list|members}, \code{/users}, \code{/history 20}}
 \end{frame}
 
-% 12. Team contributions
-\begin{frame}{Team contributions}
-  \eyebrow{DIVISION OF RESPONSIBILITIES}
-  \vspace{0.20cm}
-
-  \begin{columns}[T,onlytextwidth]
-    \column{0.48\textwidth}
-
-      \card{0.96\linewidth}{Mahesh}{
-        Server implementation, Bash scripts and testing.
-      }
-
-      \vspace{0.16cm}
-      \card{0.96\linewidth}{Shravan}{
-        Console client implementation.
-      }
-
-      \vspace{0.16cm}
-      \card{0.96\linewidth}{Rajiv}{
-        GUI implementation.
-      }
-
-    \column{0.48\textwidth}
-
-      \card{0.96\linewidth}{Divya}{
-        Performance profiling and analysis.
-      }
-
-      \vspace{0.16cm}
-      \card{0.96\linewidth}{Shubham}{
-        Documentation, README and project report.
-      }
+% ================= 5. CONCURRENCY & PERSISTENCE =================
+\begin{frame}[t]{Concurrency \& Persistence}
+  \vspace{2mm}
+  \begin{columns}[T]
+    \column{0.47\textwidth}
+    \kicker{Protect the invariants}
+    \begin{itemize}\footnotesize\setlength\itemsep{2pt}
+      \item \code{putIfAbsent} guarantees one registration winner
+      \item Per-handler lock: login reply is queued before the ``joined'' broadcast
+      \item Synchronised history keeps memory and disk in the same order
+      \item Graceful shutdown flushes the queued history
+    \end{itemize}
+    \column{0.47\textwidth}
+    \kicker{Isolate slow work}
+    \begin{itemize}\footnotesize\setlength\itemsep{2pt}
+      \item Bounded outbox per client (10,000 lines); overflow closes that client
+      \item Dedicated writer thread per client
+      \item Background history-writer thread
+      \item No file or socket write while holding a shared lock
+    \end{itemize}
   \end{columns}
-
-  \vspace{0.35cm}
-  \begin{beamercolorbox}[wd=\textwidth,sep=0.18cm,rounded=true]{card}
-    \centering
-    \small\textbf{
-    Each member contributed to building and validating
-    the multi-client chat application.}
-  \end{beamercolorbox}
+  \vspace{2mm}
+  \begin{tikzpicture}
+    \node[fill=navy,rounded corners=4pt,inner sep=7pt,text width=0.88\textwidth,align=left]{%
+      {\color{amber}\bfseries Files, not a database.} {\color{white}\footnotesize\ \code{\color{cyan2}users.txt}, \code{\color{cyan2}groups.txt}, \code{\color{cyan2}history.log}, \code{\color{cyan2}server.log} are loaded at startup; group updates use temp file + atomic replace.}};
+  \end{tikzpicture}
 \end{frame}
 
-% 12. Conclusion
-\begin{frame}{Takeaways}
-  \centering
-  \vspace{0.18cm}
-  \begin{columns}[T,onlytextwidth]
-    \column{0.31\textwidth}
-      \metric{0.96\linewidth}{1 server}{TCP endpoint for console and Swing clients}
-    \column{0.31\textwidth}
-      \metric{0.96\linewidth}{3 routes}{Public, private and group messaging}
-    \column{0.31\textwidth}
-      \metric{0.96\linewidth}{Queued I/O}{Per-client delivery and async history}
+% ================= 6. PROFILING =================
+\begin{frame}[t]{Profiling: Where the Time Goes}
+  \vspace{1mm}
+  \begin{columns}[T]
+    \column{0.52\textwidth}
+    {\scriptsize\color{slate} Built-in profiler (\code{-Dprofile=true}) \;|\; 20 clients $\times$ 500 messages}\\[2mm]
+    \footnotesize\setlength\tabcolsep{3pt}
+    \rowcolors{2}{mist}{white}
+    \begin{tabular}{@{}lrrr@{}}
+      \rowcolor{navy}
+      \color{white}\bfseries Method & \color{white}\bfseries Calls & \color{white}\bfseries Total ms & \color{white}\bfseries Avg ms\\
+      register (hashing) & 22 & 33,760 & 1,535\\
+      publicMessage & 10,020 & 27,872 & 2.78\\
+      send (1 delivery) & 201,105 & 9,016 & 0.045\\
+      storeMessage & 10,060 & 1,523 & 0.15\\
+      /history & 20 & 134 & 6.7\\
+      /group create & 20 & 51 & 2.5\\
+    \end{tabular}
+    \column{0.44\textwidth}
+    \begin{itemize}\footnotesize\setlength\itemsep{4pt}
+      \item \hl{Hashing is the slowest step} --- deliberately, to resist stolen password files
+      \item \hl{Chatting is cheap:} a public message to 20 users takes about 2.8 ms
+      \item \hl{File-backed commands} cost more than in-memory ones
+    \end{itemize}
   \end{columns}
+  \vspace{2mm}
+  \begin{center}
+    \stat{$\sim$6,600}{messages / second}\hspace{3mm}\stat{132k}{deliveries / second}\hspace{3mm}\stat{200,000}{of 200,000 delivered}
+  \end{center}
+\end{frame}
 
-  \vspace{0.38cm}
-  \begin{beamercolorbox}[wd=\textwidth,sep=0.22cm,rounded=true]{card}
-    \centering
-    \large The central lesson: concurrency is not only about serving many clients;
-    it is about preserving message, identity and persistence invariants while slow work is isolated.
-  \end{beamercolorbox}
-
-  \vspace{0.42cm}
-  {\color{teal}\LARGE\bfseries Thank you}\\[0.10cm]
-  {\color{muted}Questions?}
+% ================= 7. TAKEAWAYS & NEXT STEPS =================
+\begin{frame}[t]{Takeaways \& Next Steps}
+  \vspace{1mm}
+  \begin{columns}[T]
+    \column{0.47\textwidth}
+    \kicker{What we delivered}
+    \begin{itemize}\footnotesize\setlength\itemsep{3pt}
+      \item Concurrent multi-user server
+      \item Console and Swing GUI clients
+      \item Public, private, group chat + history
+      \item Hashed passwords, persistent state
+    \end{itemize}
+    \column{0.47\textwidth}
+    \kicker{Known limits}
+    \begin{itemize}\footnotesize\setlength\itemsep{2pt}
+      \item Plaintext TCP (no TLS)
+      \item History held in memory; linear scan
+    \end{itemize}
+    \vspace{1mm}
+    \kicker{Next steps}
+    \begin{itemize}\footnotesize\setlength\itemsep{2pt}
+      \item TLS encryption
+      \item Database-backed history
+      \item Global login limits, GUI auto-reconnect
+    \end{itemize}
+  \end{columns}
+  \vspace{2mm}
+  \begin{tikzpicture}
+    \node[fill=navy,rounded corners=4pt,inner sep=6pt,text width=0.88\textwidth,align=left]{%
+      {\color{amber}\bfseries Key lesson.} {\color{white}\footnotesize\ Concurrency is about preserving message, identity and persistence invariants while many users act at once.\ \ \color{amber}\bfseries Thank you}};
+  \end{tikzpicture}
 \end{frame}
 
 \end{document}
